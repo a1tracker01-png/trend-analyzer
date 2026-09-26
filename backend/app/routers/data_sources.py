@@ -9,7 +9,8 @@ from backend.app.models.data_source import DataSource
 from backend.app.schemas.data_source import (
     DataSourceResponse,
     DataSourceUpdate,
-    DataSourceHealthResponse
+    DataSourceHealthResponse,
+    SyncRequest
 )
 from backend.app.data_sources.service import DataSourceService
 
@@ -73,13 +74,13 @@ def update_data_source_config(source_id: int, payload: DataSourceUpdate, db: Ses
 
     current_config = json.loads(source.config_json) if source.config_json else {}
     if payload.access_token is not None:
-        current_config["access_token"] = payload.access_token
+        current_config["access_token"] = payload.access_token.strip()
     if payload.account_id is not None:
-        current_config["account_id"] = payload.account_id
+        current_config["account_id"] = payload.account_id.strip()
     if payload.api_token is not None:
-        current_config["api_token"] = payload.api_token
+        current_config["api_token"] = payload.api_token.strip()
     if payload.actor_id is not None:
-        current_config["actor_id"] = payload.actor_id
+        current_config["actor_id"] = payload.actor_id.strip()
 
     source.config_json = json.dumps(current_config)
     if payload.provider_type:
@@ -87,6 +88,8 @@ def update_data_source_config(source_id: int, payload: DataSourceUpdate, db: Ses
     if payload.api_endpoint:
         source.api_endpoint = payload.api_endpoint
     if payload.is_active is not None:
+        if payload.is_active:
+            db.query(DataSource).update({DataSource.is_active: False})
         source.is_active = payload.is_active
 
     db.commit()
@@ -96,35 +99,59 @@ def update_data_source_config(source_id: int, payload: DataSourceUpdate, db: Ses
 @router.post("/{source_id}/sync")
 def trigger_data_source_sync(
     source_id: int,
+    payload: Optional[SyncRequest] = None,
     category_slug: Optional[str] = Query(None, description="Optional category to sync specifically"),
     db: Session = Depends(get_db)
 ):
-    """Triggers compliant data ingestion from the selected provider."""
+    """
+    Triggers fast data ingestion from Apify or other configured providers.
+    Accepts inline api_token in body for instant 1-click execution.
+    """
     source = db.query(DataSource).filter(DataSource.id == source_id).first()
     if not source:
         raise HTTPException(status_code=404, detail="Data source not found")
 
-    results = []
-    if category_slug:
-        cat = db.query(Category).filter(Category.slug == category_slug.lower()).first()
-        if not cat:
-            raise HTTPException(status_code=404, detail=f"Category '{category_slug}' not found")
-        categories = [cat]
-    else:
-        categories = db.query(Category).filter(Category.is_active == True).all()
+    # If payload provided an api_token, update config and set source as active automatically
+    if payload and payload.api_token and payload.api_token.strip():
+        current_config = json.loads(source.config_json) if source.config_json else {}
+        current_config["api_token"] = payload.api_token.strip()
+        source.config_json = json.dumps(current_config)
+        db.query(DataSource).update({DataSource.is_active: False})
+        source.is_active = True
+        db.commit()
+        db.refresh(source)
 
-    for cat in categories:
-        res = DataSourceService.sync_category(db, cat, data_source=source)
-        results.append(res.model_dump())
+    target_category_slug = category_slug
+    if payload and payload.category_slug:
+        target_category_slug = payload.category_slug
 
-    return {
-        "status": "success",
-        "data_source": source.name,
-        "results": results
-    }
+    try:
+        result = DataSourceService.sync_unified(
+            db=db,
+            data_source=source,
+            category_slug=target_category_slug,
+            limit=100
+        )
+        return {
+            "status": result.get("status", "success"),
+            "data_source": source.name,
+            "message": result.get("message", "Sync complete"),
+            "reels_count": result.get("reels_count", 0),
+            "details": result
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 @router.post("/purge-mock-data")
 def purge_mock_data(db: Session = Depends(get_db)):
     """Removes all synthetic / fake sample reels from the database."""
     count = DataSourceService.purge_mock_data(db)
-    return {"status": "success", "purged_count": count}
+    return {
+        "status": "success",
+        "purged_count": count,
+        "message": f"Successfully deleted {count} fake seed reels from database."
+    }

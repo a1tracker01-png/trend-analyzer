@@ -44,20 +44,20 @@ INITIAL_CATEGORIES = [
 
 INITIAL_DATA_SOURCES = [
     {
-        "name": "Permitted Sandbox Feed (Mock / Seed Provider)",
-        "provider_type": "mock_provider",
-        "auth_type": "none",
-        "is_active": True,
-        "config_json": "{}",
-        "status_message": "Operational - Compliant synthetic ingestion active"
-    },
-    {
         "name": "Apify Instagram Reels (Live Cloud Ingestion)",
         "provider_type": "apify_provider",
         "auth_type": "api_key",
-        "is_active": False,
+        "is_active": True,
         "config_json": '{"api_token": "", "actor_id": "apify~instagram-reel-scraper"}',
-        "status_message": "Available - Paste Apify API Token to pull live real reels"
+        "status_message": "Ready - Paste Apify API Token to pull live real reels"
+    },
+    {
+        "name": "Permitted Sandbox Feed (Mock / Seed Provider)",
+        "provider_type": "mock_provider",
+        "auth_type": "none",
+        "is_active": False,
+        "config_json": "{}",
+        "status_message": "Standby - Mock provider"
     },
     {
         "name": "Meta Instagram Graph API (Official)",
@@ -100,21 +100,14 @@ def seed_database(force_reseed: bool = False):
                 logger.info(f"Created data source: {ds_data['name']}")
         db.commit()
 
-        # 3. Check if all categories have reels
+        # Only inject mock reels if force_reseed is explicitly requested AND active source is mock
         active_source = db.query(DataSource).filter(DataSource.is_active == True).first()
-        categories = db.query(Category).all()
-        
-        for cat in categories:
-            cat_reel_count = db.query(Reel).filter(Reel.category_id == cat.id).count()
-            if cat_reel_count < 100 or force_reseed:
-                logger.info(f"Syncing reels for category: {cat.name}...")
-                result = DataSourceService.sync_category(db, cat, data_source=active_source, limit=105)
-                logger.info(
-                    f"Category {cat.name}: Ingested {result.reels_ingested}, "
-                    f"Updated {result.reels_updated}, Metrics {result.metrics_recorded}"
-                )
+        if force_reseed and active_source and active_source.provider_type == "mock_provider":
+            categories = db.query(Category).all()
+            for cat in categories:
+                DataSourceService.sync_category(db, cat, data_source=active_source, limit=50)
 
-        logger.info("Database seeding complete!")
+        logger.info("Database schema setup complete.")
     except Exception as e:
         logger.error(f"Seeding failed: {e}", exc_info=True)
         db.rollback()

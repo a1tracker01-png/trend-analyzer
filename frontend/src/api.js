@@ -72,15 +72,58 @@ export async function updateDataSourceConfig(sourceId, payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error('Failed to update data source');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || err.message || 'Failed to update data source');
+  }
   return res.json();
 }
 
-export async function triggerSync(sourceId, categorySlug = null) {
+export async function triggerSync(sourceId, categorySlug = null, apiToken = null) {
   const url = categorySlug 
     ? `${API_BASE}/data-sources/${sourceId}/sync?category_slug=${encodeURIComponent(categorySlug)}`
     : `${API_BASE}/data-sources/${sourceId}/sync`;
-  const res = await fetch(url, { method: 'POST' });
-  if (!res.ok) throw new Error('Failed to trigger data sync');
+
+  const headers = {};
+  let body = undefined;
+  if (apiToken || categorySlug) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify({
+      api_token: apiToken ? apiToken.trim() : undefined,
+      category_slug: categorySlug || undefined,
+    });
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body,
+  });
+
+  if (!res.ok) {
+    let errMsg = 'Failed to trigger data sync';
+    try {
+      const data = await res.json();
+      errMsg = data.detail || data.message || JSON.stringify(data);
+    } catch (_) {
+      try {
+        const text = await res.text();
+        if (text) errMsg = text;
+      } catch (__) {}
+    }
+    throw new Error(errMsg);
+  }
+
+  return res.json();
+}
+
+export async function purgeMockData() {
+  const res = await fetch(`${API_BASE}/data-sources/purge-mock-data`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || data.message || 'Failed to purge mock data');
+  }
   return res.json();
 }

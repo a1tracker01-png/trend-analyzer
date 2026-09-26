@@ -35,3 +35,7 @@ class DataSourceHealthResponse(BaseModel):
     message: Optional[str] = None
     configured: bool
     rate_limit: Dict[str, Any]
+
+class SyncRequest(BaseModel):
+    api_token: Optional[str] = None
+    category_slug: Optional[str] = None

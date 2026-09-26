@@ -7,16 +7,17 @@ import {
   Trash2, 
   ExternalLink, 
   Zap, 
-  AlertCircle 
+  AlertCircle,
+  ShieldCheck
 } from 'lucide-react';
 import { 
   fetchDataSources, 
   fetchDataSourceHealth, 
   activateDataSource, 
   updateDataSourceConfig, 
-  triggerSync 
+  triggerSync,
+  purgeMockData
 } from '../api';
-import { formatDateTime } from '../utils';
 
 export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
   const [dataSources, setDataSources] = useState([]);
@@ -60,22 +61,15 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
 
   if (!isOpen) return null;
 
-  const handleActivate = async (id) => {
-    try {
-      await activateDataSource(id);
-      await loadData();
-    } catch (err) {
-      alert('Failed to switch data source: ' + err.message);
-    }
-  };
-
   const handleSaveApify = async (apifySourceId) => {
     try {
       setSavingApify(true);
       await updateDataSourceConfig(apifySourceId, {
-        api_token: apifyToken
+        api_token: apifyToken.trim(),
+        is_active: true
       });
-      alert('Apify token saved! Now click "Activate" or "Sync Real Reels".');
+      await activateDataSource(apifySourceId);
+      alert('Apify API Token saved and set as active provider!');
       await loadData();
     } catch (err) {
       alert('Failed to save Apify token: ' + err.message);
@@ -85,29 +79,45 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
   };
 
   const handleTriggerSync = async (sourceId) => {
+    if (!apifyToken.trim()) {
+      alert('Please enter your Apify API Token first.');
+      return;
+    }
+
     try {
       setSyncing(true);
       setSyncSuccessMsg('');
-      await triggerSync(sourceId);
-      setSyncSuccessMsg('Sync complete! Real reels ingested into your database.');
+
+      // Auto-save the token and activate Apify first
+      await updateDataSourceConfig(sourceId, {
+        api_token: apifyToken.trim(),
+        is_active: true
+      });
+      await activateDataSource(sourceId);
+
+      // Trigger sync with token passed
+      const res = await triggerSync(sourceId, null, apifyToken.trim());
+      
+      const count = res.reels_count ?? (res.details?.reels_count ?? 0);
+      setSyncSuccessMsg(res.message || `Successfully ingested real reels! Fake seed data purged.`);
+
       await loadData();
       if (onSyncComplete) onSyncComplete();
     } catch (err) {
-      alert('Sync notice: ' + err.message);
+      alert('Sync Notice: ' + err.message);
     } finally {
       setSyncing(false);
     }
   };
 
   const handlePurgeMockData = async () => {
-    if (!window.confirm('Are you sure you want to delete all fake/sample reels from the database?')) {
+    if (!window.confirm('Delete all fake / seed reels from the database? Only 100% real Instagram reels will remain.')) {
       return;
     }
     try {
       setPurging(true);
-      const res = await fetch('/api/data-sources/purge-mock-data', { method: 'POST' });
-      const data = await res.json();
-      alert(`Deleted ${data.purged_count} sample reels! Only real reels will be displayed.`);
+      const res = await purgeMockData();
+      alert(`Deleted ${res.purged_count} fake seed reels from your database!`);
       await loadData();
       if (onSyncComplete) onSyncComplete();
     } catch (err) {
@@ -117,7 +127,6 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
     }
   };
 
-  const activeSource = dataSources.find(ds => ds.is_active);
   const apifySource = dataSources.find(ds => ds.provider_type === 'apify_provider');
 
   return (
@@ -134,7 +143,7 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
             </div>
             <div>
               <h3 className="font-bold text-white text-base">Real Instagram Data Integration</h3>
-              <p className="text-xs text-slate-400">Fetch real live reels with your Apify API Token</p>
+              <p className="text-xs text-slate-400">Live cloud ingestion with your free Apify API Token</p>
             </div>
           </div>
           <button
@@ -153,9 +162,9 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
             <div className="p-5 rounded-2xl bg-gradient-to-b from-purple-950/40 to-slate-950 border-2 border-purple-500/50 shadow-xl space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="font-extrabold text-white text-base">Apify Cloud Integration</span>
+                  <span className="font-extrabold text-white text-base">Apify Cloud Ingestion</span>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    FREE $5/mo Credit
+                    FREE $5/mo Credit Included
                   </span>
                 </div>
 
@@ -170,13 +179,13 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
                 </a>
               </div>
 
-              <p className="text-xs text-slate-400">
-                Paste your Apify Personal API token below. When you tap <strong>Sync Real Reels</strong>, it automatically fetches real reels across Tech, AI, and Blockchain and updates your Neon database!
+              <p className="text-xs text-slate-300">
+                Paste your Apify Personal API token below. Tap <strong>Sync Real Reels Now</strong> to immediately fetch real reels from your Apify account into your Neon database and purge all fake seed data!
               </p>
 
               <div className="space-y-2">
                 <label className="block text-xs font-semibold text-slate-300">
-                  Apify API Token:
+                  Apify Personal API Token:
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -188,10 +197,10 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
                   />
                   <button
                     onClick={() => handleSaveApify(apifySource.id)}
-                    disabled={savingApify || !apifyToken}
-                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white transition disabled:opacity-50 shrink-0"
+                    disabled={savingApify || !apifyToken.trim()}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition disabled:opacity-50 shrink-0"
                   >
-                    {savingApify ? 'Saving...' : 'Save Token'}
+                    {savingApify ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               </div>
@@ -199,28 +208,21 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
               {/* Status and Action Buttons */}
               <div className="pt-3 border-t border-purple-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="text-xs">
-                  <span className="text-slate-400 block text-[11px]">Current Status:</span>
-                  <span className="font-semibold text-purple-300 text-xs">{apifySource.status_message}</span>
+                  <span className="text-slate-400 block text-[11px]">Sync Status:</span>
+                  <span className="font-semibold text-purple-300 text-xs">
+                    {apifySource.status_message || 'Ready to sync'}
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {!apifySource.is_active ? (
-                    <button
-                      onClick={() => handleActivate(apifySource.id)}
-                      className="px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600 text-purple-200 hover:text-white border border-purple-400/30 text-xs font-semibold transition"
-                    >
-                      Set as Active Provider
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleTriggerSync(apifySource.id)}
-                      disabled={syncing || !apifyToken}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-xs font-bold text-white shadow-lg transition disabled:opacity-50"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-                      <span>{syncing ? 'Fetching Real Reels from Cloud...' : 'Sync Real Reels Now'}</span>
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleTriggerSync(apifySource.id)}
+                    disabled={syncing || !apifyToken.trim()}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-xs font-extrabold text-white shadow-lg shadow-purple-600/30 transition disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                    <span>{syncing ? 'Ingesting Real Reels...' : 'Sync Real Reels Now'}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -245,9 +247,9 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
           </div>
 
           {syncSuccessMsg && (
-            <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-xs text-emerald-300 flex items-center gap-2">
+            <div className="p-3.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-xs text-emerald-300 flex items-center gap-2">
               <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>{syncSuccessMsg}</span>
+              <span className="font-semibold">{syncSuccessMsg}</span>
             </div>
           )}
 
@@ -255,7 +257,10 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-xs text-slate-400">
-          <span>Real-time Ingestion into Neon PostgreSQL</span>
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Neon PostgreSQL Cloud Database</span>
+          </div>
           <button
             onClick={onClose}
             className="px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium transition"
