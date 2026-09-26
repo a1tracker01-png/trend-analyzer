@@ -52,6 +52,14 @@ INITIAL_DATA_SOURCES = [
         "status_message": "Operational - Compliant synthetic ingestion active"
     },
     {
+        "name": "Apify Instagram Reels (Live Cloud Ingestion)",
+        "provider_type": "apify_provider",
+        "auth_type": "api_key",
+        "is_active": False,
+        "config_json": '{"api_token": "", "actor_id": "apify~instagram-reel-scraper"}',
+        "status_message": "Available - Paste Apify API Token to pull live real reels"
+    },
+    {
         "name": "Meta Instagram Graph API (Official)",
         "provider_type": "official_graph_api",
         "auth_type": "oauth2_bearer",
@@ -114,4 +122,4 @@ def seed_database(force_reseed: bool = False):
         db.close()
 
 if __name__ == "__main__":
-    seed_database(force_reseed=True)
+    seed_database(force_reseed=False)

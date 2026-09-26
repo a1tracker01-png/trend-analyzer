@@ -14,6 +14,7 @@ from backend.app.models.trending_score import TrendingScore
 from backend.app.data_sources.base import BaseDataSourceProvider, ReelRawData, SyncResult
 from backend.app.data_sources.meta_graph_api import MetaGraphApiProvider
 from backend.app.data_sources.mock_provider import MockPermittedProvider
+from backend.app.data_sources.apify_provider import ApifyInstagramProvider
 from backend.app.services.trending_service import (
     calculate_engagement_rate,
     calculate_growth_velocity,
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 PROVIDER_REGISTRY: Dict[str, Type[BaseDataSourceProvider]] = {
     "official_graph_api": MetaGraphApiProvider,
     "mock_provider": MockPermittedProvider,
+    "apify_provider": ApifyInstagramProvider,
 }
 
 class DataSourceService:
@@ -67,10 +69,6 @@ class DataSourceService:
         data_source: Optional[DataSource] = None,
         limit: int = 105
     ) -> SyncResult:
-        """
-        Synchronizes reels for a single category using the selected compliant data source.
-        Updates creators, reels, historical metric snapshots, velocity and trending ranks.
-        """
         if not data_source:
             data_source = db.query(DataSource).filter(DataSource.is_active == True).first()
             if not data_source:
@@ -112,7 +110,7 @@ class DataSourceService:
                     db.add(creator)
                     db.flush()
                 else:
-                    creator.followers_count = item.creator_followers
+                    creator.followers_count = item.creator_followers or creator.followers_count
                     creator.full_name = item.creator_name or creator.full_name
                     creator.profile_pic_url = item.creator_profile_pic or creator.profile_pic_url
                     creator.is_verified = item.creator_is_verified
@@ -188,7 +186,6 @@ class DataSourceService:
                     velocity=velocity
                 )
 
-                # Save TrendingScore historical record
                 trending_record = TrendingScore(
                     reel_id=reel.id,
                     period="24h",
@@ -198,7 +195,6 @@ class DataSourceService:
                 )
                 db.add(trending_record)
 
-                # Update Reel's current denormalized attributes
                 reel.current_views = metrics.view_count
                 reel.current_likes = metrics.like_count
                 reel.current_comments = metrics.comment_count
@@ -214,10 +210,8 @@ class DataSourceService:
 
         db.commit()
 
-        # 6. Recalculate rank positions (1..100+) in this category
         recalculate_category_ranks(db, category.id)
 
-        # 7. Update DataSource status
         rate_info = provider.get_rate_limit_info()
         data_source.last_synced_at = now
         data_source.rate_limit_remaining = rate_info.get("remaining", 200)

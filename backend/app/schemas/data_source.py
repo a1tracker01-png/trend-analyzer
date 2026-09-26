@@ -23,6 +23,8 @@ class DataSourceUpdate(BaseModel):
     api_endpoint: Optional[str] = None
     access_token: Optional[str] = None
     account_id: Optional[str] = None
+    api_token: Optional[str] = None
+    actor_id: Optional[str] = None
     is_active: Optional[bool] = None
 
 class DataSourceHealthResponse(BaseModel):

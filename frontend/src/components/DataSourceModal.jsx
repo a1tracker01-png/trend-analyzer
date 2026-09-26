@@ -9,8 +9,10 @@ import {
   Server, 
   Activity, 
   AlertCircle, 
-  Sliders, 
-  Lock 
+  Lock, 
+  Globe2, 
+  ExternalLink, 
+  Zap 
 } from 'lucide-react';
 import { 
   fetchDataSources, 
@@ -28,10 +30,14 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
   const [syncing, setSyncing] = useState(false);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState('');
   
+  // Apify config fields
+  const [apifyToken, setApifyToken] = useState('');
+  const [savingApify, setSavingApify] = useState(false);
+
   // Meta API config fields
   const [metaToken, setMetaToken] = useState('');
   const [metaAccountId, setMetaAccountId] = useState('');
-  const [savingConfig, setSavingConfig] = useState(false);
+  const [savingMeta, setSavingMeta] = useState(false);
 
   const loadData = async () => {
     try {
@@ -42,6 +48,25 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
       ]);
       setDataSources(sources);
       setHealth(healthData);
+
+      // Pre-fill Apify token if present
+      const apifySource = sources.find(s => s.provider_type === 'apify_provider');
+      if (apifySource?.config_json) {
+        try {
+          const cfg = JSON.parse(apifySource.config_json);
+          if (cfg.api_token) setApifyToken(cfg.api_token);
+        } catch (e) {}
+      }
+
+      // Pre-fill Meta token if present
+      const metaSource = sources.find(s => s.provider_type === 'official_graph_api');
+      if (metaSource?.config_json) {
+        try {
+          const cfg = JSON.parse(metaSource.config_json);
+          if (cfg.access_token) setMetaToken(cfg.access_token);
+          if (cfg.account_id) setMetaAccountId(cfg.account_id);
+        } catch (e) {}
+      }
     } catch (err) {
       console.error('Error loading data sources:', err);
     } finally {
@@ -66,9 +91,24 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
     }
   };
 
-  const handleSaveMetaConfig = async (metaSourceId) => {
+  const handleSaveApify = async (apifySourceId) => {
     try {
-      setSavingConfig(true);
+      setSavingApify(true);
+      await updateDataSourceConfig(apifySourceId, {
+        api_token: apifyToken
+      });
+      alert('Apify API token saved successfully! You can now activate and sync real Instagram reels.');
+      await loadData();
+    } catch (err) {
+      alert('Failed to save Apify settings: ' + err.message);
+    } finally {
+      setSavingApify(false);
+    }
+  };
+
+  const handleSaveMeta = async (metaSourceId) => {
+    try {
+      setSavingMeta(true);
       await updateDataSourceConfig(metaSourceId, {
         access_token: metaToken,
         account_id: metaAccountId
@@ -78,7 +118,7 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
     } catch (err) {
       alert('Failed to save settings: ' + err.message);
     } finally {
-      setSavingConfig(false);
+      setSavingMeta(false);
     }
   };
 
@@ -86,8 +126,8 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
     try {
       setSyncing(true);
       setSyncSuccessMsg('');
-      const res = await triggerSync(sourceId);
-      setSyncSuccessMsg('Ingestion & ranking completed successfully!');
+      await triggerSync(sourceId);
+      setSyncSuccessMsg('Live reels ingested & scored into Neon PostgreSQL successfully!');
       await loadData();
       if (onSyncComplete) onSyncComplete();
     } catch (err) {
@@ -98,6 +138,7 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
   };
 
   const activeSource = dataSources.find(ds => ds.is_active);
+  const apifySource = dataSources.find(ds => ds.provider_type === 'apify_provider');
   const metaSource = dataSources.find(ds => ds.provider_type === 'official_graph_api');
 
   return (
@@ -114,7 +155,7 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
             </div>
             <div>
               <h3 className="font-bold text-white text-base">Pluggable Data Source Engine</h3>
-              <p className="text-xs text-slate-400">Compliance-First Architecture (Zero Illegal Web Scraping)</p>
+              <p className="text-xs text-slate-400">Live Real Instagram Ingestion (Zero Unauthorized Browser Scraping)</p>
             </div>
           </div>
           <button
@@ -128,20 +169,6 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
         {/* Body */}
         <div className="overflow-y-auto p-6 space-y-6">
           
-          {/* Policy Compliance Notice */}
-          <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 flex items-start gap-3">
-            <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-            <div className="text-xs text-slate-300 space-y-1">
-              <span className="font-bold text-emerald-300 block text-sm">
-                100% Terms of Service Compliant
-              </span>
-              <p>
-                This application does <strong>not</strong> scrape Instagram HTML or bypass authentication/rate limits.
-                Data is ingested strictly via either official Meta Graph API endpoints or verified permitted sandbox feeds.
-              </p>
-            </div>
-          </div>
-
           {/* Active Data Source Health & Quota */}
           {health && (
             <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
@@ -173,10 +200,82 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
               </div>
 
               {health.message && (
-                <p className="text-xs text-slate-400 pt-2 border-t border-slate-800">
+                <p className="text-xs text-slate-300 pt-2 border-t border-slate-800">
                   {health.message}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Section: Option B - Apify Real Instagram Feed (Cheapest & Recommended) */}
+          {apifySource && (
+            <div className="p-5 rounded-2xl bg-gradient-to-b from-purple-950/30 to-indigo-950/20 border-2 border-purple-500/40 shadow-lg space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-300 flex items-center justify-center font-bold">
+                    <Zap className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-white text-sm">Apify Instagram Cloud Feed</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        FREE $5/mo Credit
+                      </span>
+                    </div>
+                    <span className="text-xs text-slate-400">Pulls real public reels across Tech, AI, and Blockchain</span>
+                  </div>
+                </div>
+
+                <a
+                  href="https://console.apify.com/account/integrations"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs text-purple-300 hover:text-purple-200 font-semibold underline self-start sm:self-auto"
+                >
+                  <span>Get Free API Token</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+
+              <div className="pt-2 space-y-2">
+                <label className="block text-xs font-medium text-slate-300">
+                  Apify Personal API Token (<code className="text-purple-300">apify_api_...</code>)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder="apify_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    value={apifyToken}
+                    onChange={(e) => setApifyToken(e.target.value)}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 font-mono"
+                  />
+                  <button
+                    onClick={() => handleSaveApify(apifySource.id)}
+                    disabled={savingApify || !apifyToken}
+                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white transition disabled:opacity-50 shrink-0"
+                  >
+                    {savingApify ? 'Saving...' : 'Save Token'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-purple-800/30 text-xs">
+                <span className="text-slate-400 text-[11px]">
+                  No Facebook account or Meta App Review required.
+                </span>
+                {apifySource.is_active ? (
+                  <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> Currently Active Ingestion Source
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => handleActivate(apifySource.id)}
+                    className="px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-400/30 text-xs font-semibold transition"
+                  >
+                    Activate Apify Feed
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -184,7 +283,7 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
           <div className="space-y-3">
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
               <Server className="w-4 h-4 text-purple-400" />
-              <span>Available Ingestion Adapters</span>
+              <span>All Available Adapters</span>
             </h4>
 
             <div className="space-y-3">
@@ -211,7 +310,7 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
                           )}
                         </div>
                         <p className="text-xs text-slate-400 mt-1">
-                          Type: <code className="text-slate-300">{ds.provider_type}</code> • Auth: <code className="text-slate-300">{ds.auth_type}</code>
+                          Type: <code className="text-slate-300">{ds.provider_type}</code> • Status: <span className="text-slate-300">{ds.status_message}</span>
                         </p>
                       </div>
 
@@ -230,7 +329,7 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-semibold text-white shadow transition disabled:opacity-50"
                           >
                             <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-                            <span>{syncing ? 'Ingesting...' : 'Sync Now'}</span>
+                            <span>{syncing ? 'Ingesting Real Reels...' : 'Sync Real Reels'}</span>
                           </button>
                         )}
                       </div>
@@ -241,58 +340,9 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
             </div>
           </div>
 
-          {/* Meta Instagram Graph API Configuration */}
-          {metaSource && (
-            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
-              <div className="flex items-center gap-2 text-sm font-bold text-white">
-                <Lock className="w-4 h-4 text-purple-400" />
-                <span>Meta Instagram Graph API Credentials (Optional)</span>
-              </div>
-              <p className="text-xs text-slate-400">
-                To connect a live Instagram Business or Creator account, input your Graph API User/Page Token and Account ID.
-              </p>
-
-              <div className="space-y-3 pt-1">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Meta Graph Access Token
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="EAAB..."
-                    value={metaToken}
-                    onChange={(e) => setMetaToken(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Instagram Business/Creator Account ID
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="17841400..."
-                    value={metaAccountId}
-                    onChange={(e) => setMetaAccountId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 font-mono"
-                  />
-                </div>
-
-                <button
-                  onClick={() => handleSaveMetaConfig(metaSource.id)}
-                  disabled={savingConfig}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition disabled:opacity-50"
-                >
-                  {savingConfig ? 'Saving...' : 'Save Meta Configuration'}
-                </button>
-              </div>
-            </div>
-          )}
-
           {syncSuccessMsg && (
-            <div className="p-3 rounded-xl bg-purple-500/20 border border-purple-500/40 text-xs text-purple-300 flex items-center gap-2">
-              <Check className="w-4 h-4 text-purple-400 shrink-0" />
+            <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-xs text-emerald-300 flex items-center gap-2">
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>{syncSuccessMsg}</span>
             </div>
           )}
@@ -301,7 +351,7 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-xs text-slate-400">
-          <span>Active Rate Limit: Safe Quota Enforcement</span>
+          <span>Real-time Ingestion into Neon PostgreSQL</span>
           <button
             onClick={onClose}
             className="px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium transition"

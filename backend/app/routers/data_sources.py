@@ -58,7 +58,6 @@ def activate_data_source(source_id: int, db: Session = Depends(get_db)):
     if not source:
         raise HTTPException(status_code=404, detail="Data source not found")
 
-    # Deactivate other sources
     db.query(DataSource).update({DataSource.is_active: False})
     source.is_active = True
     db.commit()
@@ -77,6 +76,10 @@ def update_data_source_config(source_id: int, payload: DataSourceUpdate, db: Ses
         current_config["access_token"] = payload.access_token
     if payload.account_id is not None:
         current_config["account_id"] = payload.account_id
+    if payload.api_token is not None:
+        current_config["api_token"] = payload.api_token
+    if payload.actor_id is not None:
+        current_config["actor_id"] = payload.actor_id
 
     source.config_json = json.dumps(current_config)
     if payload.provider_type:
