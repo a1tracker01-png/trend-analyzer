@@ -4,9 +4,23 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./roshan.db")
 
-# Neon and Heroku often provide postgres:// URLs; SQLAlchemy 1.4+ requires postgresql://
+# Neon and cloud providers often supply URLs starting with postgres://
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# SQLAlchemy 2.1+ defaults to psycopg (psycopg 3) for postgresql://
+# If psycopg is installed, use postgresql+psycopg://
+# Otherwise fallback to postgresql+psycopg2://
+if DATABASE_URL.startswith("postgresql://") and "+psycopg" not in DATABASE_URL and "+psycopg2" not in DATABASE_URL:
+    try:
+        import psycopg
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+    except ImportError:
+        try:
+            import psycopg2
+            DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+        except ImportError:
+            pass
 
 engine_kwargs = {}
 if DATABASE_URL.startswith("sqlite"):
@@ -16,7 +30,7 @@ else:
     engine_kwargs.update({
         "pool_size": 10,
         "max_overflow": 20,
-        "pool_pre_ping": True,  # Checks connection liveness before executing query (vital for Neon serverless)
+        "pool_pre_ping": True,  # Checks connection liveness before executing query
         "pool_recycle": 300,   # Recycle connections every 5 minutes
     })
 
