@@ -67,7 +67,7 @@ class DataSourceService:
         db: Session,
         category: Category,
         data_source: Optional[DataSource] = None,
-        limit: int = 105
+        limit: int = 25
     ) -> SyncResult:
         if not data_source:
             data_source = db.query(DataSource).filter(DataSource.is_active == True).first()
@@ -82,14 +82,23 @@ class DataSourceService:
             category_name=category.name
         )
 
+        now = datetime.now(timezone.utc)
+
         try:
             raw_reels = provider.fetch_reels_by_category(category.name, limit=limit)
         except Exception as e:
             logger.error(f"Error fetching data from {provider.get_provider_name()}: {e}")
             result.errors.append(str(e))
+            data_source.status_message = f"Sync error: {str(e)[:180]}"
+            data_source.last_synced_at = now
+            db.commit()
             return result
 
-        now = datetime.now(timezone.utc)
+        if not raw_reels:
+            data_source.status_message = f"0 reels returned for {category.name} at {now.strftime('%H:%M:%S UTC')}"
+            data_source.last_synced_at = now
+            db.commit()
+            return result
 
         for item in raw_reels:
             try:

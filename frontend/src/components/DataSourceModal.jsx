@@ -12,7 +12,8 @@ import {
   Lock, 
   Globe2, 
   ExternalLink, 
-  Zap 
+  Zap, 
+  SlidersHorizontal 
 } from 'lucide-react';
 import { 
   fetchDataSources, 
@@ -32,6 +33,8 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
   
   // Apify config fields
   const [apifyToken, setApifyToken] = useState('');
+  const [apifyActor, setApifyActor] = useState('apify~instagram-reel-scraper');
+  const [customTarget, setCustomTarget] = useState('');
   const [savingApify, setSavingApify] = useState(false);
 
   // Meta API config fields
@@ -49,16 +52,18 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
       setDataSources(sources);
       setHealth(healthData);
 
-      // Pre-fill Apify token if present
+      // Pre-fill Apify settings
       const apifySource = sources.find(s => s.provider_type === 'apify_provider');
       if (apifySource?.config_json) {
         try {
           const cfg = JSON.parse(apifySource.config_json);
           if (cfg.api_token) setApifyToken(cfg.api_token);
+          if (cfg.actor_id) setApifyActor(cfg.actor_id);
+          if (cfg.custom_target) setCustomTarget(cfg.custom_target);
         } catch (e) {}
       }
 
-      // Pre-fill Meta token if present
+      // Pre-fill Meta settings
       const metaSource = sources.find(s => s.provider_type === 'official_graph_api');
       if (metaSource?.config_json) {
         try {
@@ -95,9 +100,11 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
     try {
       setSavingApify(true);
       await updateDataSourceConfig(apifySourceId, {
-        api_token: apifyToken
+        api_token: apifyToken,
+        actor_id: apifyActor,
+        custom_target: customTarget
       });
-      alert('Apify API token saved successfully! You can now activate and sync real Instagram reels.');
+      alert('Apify settings saved successfully! Now click "Sync Real Reels".');
       await loadData();
     } catch (err) {
       alert('Failed to save Apify settings: ' + err.message);
@@ -126,8 +133,8 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
     try {
       setSyncing(true);
       setSyncSuccessMsg('');
-      await triggerSync(sourceId);
-      setSyncSuccessMsg('Live reels ingested & scored into Neon PostgreSQL successfully!');
+      const res = await triggerSync(sourceId);
+      setSyncSuccessMsg('Live sync request finished. Check status below!');
       await loadData();
       if (onSyncComplete) onSyncComplete();
     } catch (err) {
@@ -184,18 +191,18 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
                 <div>
                   <span className="text-slate-500 block">Current Provider</span>
                   <span className="text-white font-semibold">{health.provider_name}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Rate Limit Remaining</span>
-                  <span className="text-emerald-400 font-bold">{health.rate_limit?.remaining} / {health.rate_limit?.limit} calls</span>
+                  <span className="text-slate-500 block">Last Status</span>
+                  <span className="text-purple-300 font-medium truncate block">{activeSource?.status_message || 'Ready'}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 block">Last Synced</span>
-                  <span className="text-slate-300">{activeSource?.last_synced_at ? formatDateTime(activeSource.last_synced_at) : 'Just now'}</span>
+                  <span className="text-slate-300">{activeSource?.last_synced_at ? formatDateTime(activeSource.last_synced_at) : 'Not synced yet'}</span>
                 </div>
               </div>
 
@@ -207,9 +214,9 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
             </div>
           )}
 
-          {/* Section: Option B - Apify Real Instagram Feed (Cheapest & Recommended) */}
+          {/* Section: Option B - Apify Real Instagram Feed */}
           {apifySource && (
-            <div className="p-5 rounded-2xl bg-gradient-to-b from-purple-950/30 to-indigo-950/20 border-2 border-purple-500/40 shadow-lg space-y-3">
+            <div className="p-5 rounded-2xl bg-gradient-to-b from-purple-950/30 to-indigo-950/20 border-2 border-purple-500/50 shadow-lg space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-300 flex items-center justify-center font-bold">
@@ -217,12 +224,12 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-white text-sm">Apify Instagram Cloud Feed</span>
+                      <span className="font-extrabold text-white text-sm">Apify Real Instagram Cloud Feed</span>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                         FREE $5/mo Credit
                       </span>
                     </div>
-                    <span className="text-xs text-slate-400">Pulls real public reels across Tech, AI, and Blockchain</span>
+                    <span className="text-xs text-slate-400">Pulls real public reels directly from Instagram</span>
                   </div>
                 </div>
 
@@ -237,44 +244,88 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
                 </a>
               </div>
 
-              <div className="pt-2 space-y-2">
-                <label className="block text-xs font-medium text-slate-300">
-                  Apify Personal API Token (<code className="text-purple-300">apify_api_...</code>)
-                </label>
-                <div className="flex gap-2">
+              <div className="space-y-3 pt-1">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Apify Personal API Token (<code className="text-purple-300">apify_api_...</code>)
+                  </label>
                   <input
                     type="password"
                     placeholder="apify_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                     value={apifyToken}
                     onChange={(e) => setApifyToken(e.target.value)}
-                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 font-mono"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 font-mono"
                   />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                      Scraping Mode / Actor
+                    </label>
+                    <select
+                      value={apifyActor}
+                      onChange={(e) => setApifyActor(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-purple-500"
+                    >
+                      <option value="apify~instagram-reel-scraper">Top Tech Creators (Reel Scraper)</option>
+                      <option value="apify~instagram-hashtag-scraper">Hashtags (#tech, #ai, #blockchain)</option>
+                      <option value="apify~instagram-scraper">Universal Search Scraper</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                      Target Account / Hashtag (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. mkbhd, theverge, or #ai"
+                      value={customTarget}
+                      onChange={(e) => setCustomTarget(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[11px] text-slate-400">
+                    Takes ~15-30s per sync. Saves real video URLs & stats into Neon.
+                  </span>
                   <button
                     onClick={() => handleSaveApify(apifySource.id)}
                     disabled={savingApify || !apifyToken}
-                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white transition disabled:opacity-50 shrink-0"
+                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white transition disabled:opacity-50"
                   >
-                    {savingApify ? 'Saving...' : 'Save Token'}
+                    {savingApify ? 'Saving...' : 'Save Settings'}
                   </button>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-purple-800/30 text-xs">
-                <span className="text-slate-400 text-[11px]">
-                  No Facebook account or Meta App Review required.
-                </span>
-                {apifySource.is_active ? (
-                  <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
-                    <Check className="w-3.5 h-3.5" /> Currently Active Ingestion Source
-                  </span>
-                ) : (
-                  <button
-                    onClick={() => handleActivate(apifySource.id)}
-                    className="px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-400/30 text-xs font-semibold transition"
-                  >
-                    Activate Apify Feed
-                  </button>
-                )}
+              <div className="flex items-center justify-between pt-3 border-t border-purple-800/30 text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[11px]">Provider Status:</span>
+                  <span className="font-semibold text-purple-300 text-xs">{apifySource.status_message}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!apifySource.is_active ? (
+                    <button
+                      onClick={() => handleActivate(apifySource.id)}
+                      className="px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-400/30 text-xs font-semibold transition"
+                    >
+                      Set Active
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleTriggerSync(apifySource.id)}
+                      disabled={syncing || !apifyToken}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-xs font-bold text-white shadow-lg transition disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                      <span>{syncing ? 'Fetching Real Reels from Instagram...' : 'Sync Real Reels'}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -329,7 +380,7 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-semibold text-white shadow transition disabled:opacity-50"
                           >
                             <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-                            <span>{syncing ? 'Ingesting Real Reels...' : 'Sync Real Reels'}</span>
+                            <span>{syncing ? 'Ingesting...' : 'Sync Now'}</span>
                           </button>
                         )}
                       </div>
