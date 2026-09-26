@@ -1,7 +1,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Tuple, Dict, Any
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, asc, func, or_
+from sqlalchemy import desc, func, or_
 
 from backend.app.models.category import Category
 from backend.app.models.creator import Creator
@@ -19,12 +19,32 @@ class ReelService:
             creator_resp = CreatorResponse.model_validate(reel.creator)
 
         metrics_resp = None
-        if reel.metrics:
+        if reel.metrics and len(reel.metrics) > 0:
             metrics_resp = ReelMetricsResponse.model_validate(reel.metrics[0])
+        else:
+            metrics_resp = ReelMetricsResponse(
+                id=0,
+                view_count=reel.current_views or 0,
+                like_count=reel.current_likes or 0,
+                comment_count=reel.current_comments or 0,
+                share_count=reel.current_shares or 0,
+                save_count=reel.current_saves or 0,
+                engagement_rate=reel.current_engagement_rate or 0.0,
+                recorded_at=reel.updated_at or reel.created_at
+            )
 
         trending_resp = None
-        if reel.trending_scores:
+        if reel.trending_scores and len(reel.trending_scores) > 0:
             trending_resp = TrendingScoreResponse.model_validate(reel.trending_scores[0])
+        else:
+            trending_resp = TrendingScoreResponse(
+                id=0,
+                period="24h",
+                score=reel.current_trending_score or 0.0,
+                growth_velocity=reel.current_growth_velocity or 0.0,
+                rank=reel.current_rank or 1,
+                recorded_at=reel.updated_at or reel.created_at
+            )
 
         return ReelResponse(
             id=reel.id,
@@ -59,20 +79,15 @@ class ReelService:
         search: Optional[str] = None
     ) -> Tuple[List[ReelResponse], int]:
         """
-        Retrieves reels with the requested filter mode, sorting, and pagination.
-        Handles:
-         - Last 24 Hours: strictly reels posted within the last 24 hours
-         - Fastest Growing: ordered by growth velocity
-         - Top 100: top 100 ranked by popularity score
-         - Search query by caption, creator username, or full name
+        Retrieves reels matching the requested filter mode, sorting, and pagination.
+        100% compliant with PostgreSQL and SQLite (no invalid GROUP BY constructs).
         """
         now = datetime.now(timezone.utc)
+        
         query = (
             db.query(Reel)
             .join(Category, Reel.category_id == Category.id)
             .outerjoin(Creator, Reel.creator_id == Creator.id)
-            .outerjoin(TrendingScore, Reel.id == TrendingScore.reel_id)
-            .outerjoin(ReelMetrics, Reel.id == ReelMetrics.reel_id)
             .options(
                 joinedload(Reel.creator),
                 joinedload(Reel.category),
@@ -99,36 +114,32 @@ class ReelService:
             cutoff_24h = now - timedelta(hours=24)
             query = query.filter(Reel.posted_at >= cutoff_24h)
         elif filter_mode == "fastest_growing":
-            # Growth velocity highest first
             sort_by = sort_by or "velocity"
         elif filter_mode == "top_100":
             effective_limit = min(limit, 100) if limit != 50 else 100
             sort_by = sort_by or "trending"
 
-        # Apply Sorting
+        # Count total records matching filter BEFORE ordering and pagination
+        total_count = query.count()
+
+        # Apply Sorting on indexed Reel columns
         sort_by = sort_by or "trending"
         if sort_by == "velocity":
-            query = query.order_by(desc(TrendingScore.growth_velocity))
+            query = query.order_by(desc(Reel.current_growth_velocity), desc(Reel.posted_at))
         elif sort_by == "views":
-            query = query.order_by(desc(ReelMetrics.view_count))
+            query = query.order_by(desc(Reel.current_views), desc(Reel.posted_at))
         elif sort_by == "likes":
-            query = query.order_by(desc(ReelMetrics.like_count))
+            query = query.order_by(desc(Reel.current_likes), desc(Reel.posted_at))
         elif sort_by == "engagement":
-            query = query.order_by(desc(ReelMetrics.engagement_rate))
+            query = query.order_by(desc(Reel.current_engagement_rate), desc(Reel.posted_at))
         elif sort_by == "newest":
             query = query.order_by(desc(Reel.posted_at))
         elif sort_by == "trending":
-            query = query.order_by(desc(TrendingScore.score))
+            query = query.order_by(desc(Reel.current_trending_score), desc(Reel.posted_at))
         else:
-            query = query.order_by(desc(TrendingScore.score))
+            query = query.order_by(desc(Reel.current_trending_score), desc(Reel.posted_at))
 
-        # Group by Reel ID to avoid duplicate rows from multiple metric/trending records
-        query = query.group_by(Reel.id)
-
-        # Count total items matching filter
-        total_count = query.count()
-
-        # Apply limit & offset
+        # Apply pagination
         reels = query.offset(offset).limit(effective_limit).all()
 
         formatted = [ReelService._format_reel_response(r) for r in reels]
@@ -136,7 +147,7 @@ class ReelService:
 
     @staticmethod
     def get_category_stats(db: Session, category_id: int) -> Dict[str, Any]:
-        """Calculates dashboard summary metrics for a category."""
+        """Calculates dashboard summary metrics for a category without SQL grouping conflicts."""
         now = datetime.now(timezone.utc)
         cutoff_24h = now - timedelta(hours=24)
 
@@ -147,14 +158,12 @@ class ReelService:
             .scalar() or 0
         )
 
-        # Aggregated views and average engagement
         metric_aggs = (
             db.query(
-                func.sum(ReelMetrics.view_count),
-                func.sum(ReelMetrics.like_count),
-                func.avg(ReelMetrics.engagement_rate)
+                func.sum(Reel.current_views),
+                func.sum(Reel.current_likes),
+                func.avg(Reel.current_engagement_rate)
             )
-            .join(Reel, Reel.id == ReelMetrics.reel_id)
             .filter(Reel.category_id == category_id, Reel.is_active == True)
             .first()
         )
@@ -166,10 +175,9 @@ class ReelService:
         # Fastest growing reel in category
         fastest_reel_row = (
             db.query(Reel)
-            .join(TrendingScore, Reel.id == TrendingScore.reel_id)
             .options(joinedload(Reel.creator), joinedload(Reel.metrics), joinedload(Reel.trending_scores))
             .filter(Reel.category_id == category_id, Reel.is_active == True)
-            .order_by(desc(TrendingScore.growth_velocity))
+            .order_by(desc(Reel.current_growth_velocity))
             .first()
         )
         fastest_growing = ReelService._format_reel_response(fastest_reel_row) if fastest_reel_row else None
@@ -177,10 +185,9 @@ class ReelService:
         # Top ranked reel in category
         top_reel_row = (
             db.query(Reel)
-            .join(TrendingScore, Reel.id == TrendingScore.reel_id)
             .options(joinedload(Reel.creator), joinedload(Reel.metrics), joinedload(Reel.trending_scores))
             .filter(Reel.category_id == category_id, Reel.is_active == True)
-            .order_by(desc(TrendingScore.score))
+            .order_by(desc(Reel.current_trending_score))
             .first()
         )
         top_reel = ReelService._format_reel_response(top_reel_row) if top_reel_row else None

@@ -63,19 +63,13 @@ INITIAL_DATA_SOURCES = [
 
 def seed_database(force_reseed: bool = False):
     logger.info("Initializing database schema...")
+    if force_reseed:
+        logger.info("Dropping existing tables to align schema...")
+        Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
     try:
-        if force_reseed:
-            logger.info("Force reseed enabled: resetting categories and reels...")
-            db.query(TrendingScore).delete()
-            db.query(ReelMetrics).delete()
-            db.query(Reel).delete()
-            db.query(Creator).delete()
-            db.query(Category).delete()
-            db.commit()
-
         # 1. Seed Categories
         for cat_data in INITIAL_CATEGORIES:
             existing = db.query(Category).filter(Category.slug == cat_data["slug"]).first()

@@ -23,7 +23,6 @@ from backend.app.services.trending_service import (
 
 logger = logging.getLogger(__name__)
 
-# Registry of available compliant data source providers
 PROVIDER_REGISTRY: Dict[str, Type[BaseDataSourceProvider]] = {
     "official_graph_api": MetaGraphApiProvider,
     "mock_provider": MockPermittedProvider,
@@ -77,7 +76,6 @@ class DataSourceService:
             if not data_source:
                 data_source = DataSourceService.get_or_create_data_source(db)
 
-        # Instantiate provider
         config = json.loads(data_source.config_json) if data_source.config_json else {}
         provider = DataSourceService.get_provider(data_source.provider_type, config)
         
@@ -114,7 +112,6 @@ class DataSourceService:
                     db.add(creator)
                     db.flush()
                 else:
-                    # Update profile info
                     creator.followers_count = item.creator_followers
                     creator.full_name = item.creator_name or creator.full_name
                     creator.profile_pic_url = item.creator_profile_pic or creator.profile_pic_url
@@ -123,9 +120,7 @@ class DataSourceService:
 
                 # 2. Upsert Reel
                 reel = db.query(Reel).filter(Reel.platform_media_id == item.platform_media_id).first()
-                is_new_reel = False
                 if not reel:
-                    is_new_reel = True
                     reel = Reel(
                         platform_media_id=item.platform_media_id,
                         permalink=item.permalink,
@@ -193,7 +188,7 @@ class DataSourceService:
                     velocity=velocity
                 )
 
-                # Save TrendingScore
+                # Save TrendingScore historical record
                 trending_record = TrendingScore(
                     reel_id=reel.id,
                     period="24h",
@@ -202,6 +197,16 @@ class DataSourceService:
                     recorded_at=now
                 )
                 db.add(trending_record)
+
+                # Update Reel's current denormalized attributes
+                reel.current_views = metrics.view_count
+                reel.current_likes = metrics.like_count
+                reel.current_comments = metrics.comment_count
+                reel.current_shares = metrics.share_count
+                reel.current_saves = metrics.save_count
+                reel.current_engagement_rate = engagement_rate
+                reel.current_trending_score = score
+                reel.current_growth_velocity = velocity
 
             except Exception as e:
                 logger.error(f"Error processing reel {item.platform_media_id}: {e}")
