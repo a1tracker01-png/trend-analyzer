@@ -211,9 +211,11 @@ class ApifyInstagramProvider(BaseDataSourceProvider):
                         )
                         if items_resp.status_code == 200:
                             data = items_resp.json()
-                            if isinstance(data, list) and len(data) > 0 and self._is_instagram_item(data[0]):
-                                logger.info(f"Retrieved {len(data)} items from run {run.get('id')} dataset {ds_id}")
-                                return data
+                            if isinstance(data, list) and len(data) > 0:
+                                valid = [x for x in data if self._is_instagram_item(x)]
+                                if len(valid) > 0:
+                                    logger.info(f"Retrieved {len(valid)} items from run {run.get('id')} dataset {ds_id}")
+                                    return valid
         except Exception as e:
             logger.warning(f"Error checking user actor-runs: {e}")
         return []
@@ -244,9 +246,11 @@ class ApifyInstagramProvider(BaseDataSourceProvider):
                         )
                         if items_resp.status_code == 200:
                             data = items_resp.json()
-                            if isinstance(data, list) and len(data) > 0 and self._is_instagram_item(data[0]):
-                                logger.info(f"Retrieved {len(data)} real Instagram items from user dataset {ds_id}")
-                                return data
+                            if isinstance(data, list) and len(data) > 0:
+                                valid = [x for x in data if self._is_instagram_item(x)]
+                                if len(valid) > 0:
+                                    logger.info(f"Retrieved {len(valid)} real Instagram items from user dataset {ds_id}")
+                                    return valid
         except Exception as e:
             logger.warning(f"Error checking user datasets: {e}")
         return []
@@ -263,9 +267,11 @@ class ApifyInstagramProvider(BaseDataSourceProvider):
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    if isinstance(data, list) and len(data) > 0 and self._is_instagram_item(data[0]):
-                        logger.info(f"Retrieved {len(data)} items from last run of {actor_name}")
-                        return data
+                    if isinstance(data, list) and len(data) > 0:
+                        valid = [x for x in data if self._is_instagram_item(x)]
+                        if len(valid) > 0:
+                            logger.info(f"Retrieved {len(valid)} items from last run of {actor_name}")
+                            return valid
             except Exception:
                 pass
         return []

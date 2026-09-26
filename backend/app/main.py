@@ -12,6 +12,8 @@ from backend.app.seed import seed_database
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    from backend.app.database import upgrade_schema_types
+    upgrade_schema_types(engine)
     seed_database(force_reseed=False)
     yield
 

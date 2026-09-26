@@ -9,7 +9,7 @@ class DataSource(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     provider_type = Column(String(50), nullable=False)  # "official_graph_api", "mock_provider", "webhook"
-    api_endpoint = Column(String(500), nullable=True)
+    api_endpoint = Column(Text, nullable=True)
     auth_type = Column(String(50), default="bearer")     # "oauth2_bearer", "api_key", "none"
     is_active = Column(Boolean, default=True)
     rate_limit_limit = Column(Integer, default=200)
@@ -17,7 +17,7 @@ class DataSource(Base):
     rate_limit_reset_at = Column(DateTime(timezone=True), nullable=True)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     config_json = Column(Text, nullable=True)
-    status_message = Column(String(200), default="Operational")
+    status_message = Column(Text, default="Operational")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 

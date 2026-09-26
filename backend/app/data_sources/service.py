@@ -90,15 +90,14 @@ class DataSourceService:
         limit: int = 100
     ) -> Dict[str, Any]:
         """
-        Single-pass, high-velocity ingestion.
-        Pulls real reels from Apify datasets in < 1s, distributes across categories,
-        computes trending/growth velocity, and purges all mock data.
+        High-velocity batch ingestion.
+        Pulls real reels from Apify datasets in < 2s, balances across categories,
+        computes trending/growth velocity, and purges all mock data in 1 commit.
         """
         now = datetime.now(timezone.utc)
         config = json.loads(data_source.config_json) if data_source.config_json else {}
         provider = DataSourceService.get_provider(data_source.provider_type, config)
 
-        # For non-apify (like mock), route to standard loop
         if data_source.provider_type != "apify_provider":
             cats = db.query(Category).filter(Category.is_active == True).all()
             if category_slug:
@@ -127,7 +126,7 @@ class DataSourceService:
             raise e
 
         if not raw_reels:
-            data_source.status_message = f"Scraper running in cloud. Tap Sync again in 30 seconds."
+            data_source.status_message = "Scraper running in cloud. Tap Sync again in 30 seconds."
             data_source.last_synced_at = now
             db.commit()
             return {
@@ -136,156 +135,166 @@ class DataSourceService:
                 "reels_count": 0
             }
 
-        # 2. Real data arrived: purge fake mock data immediately!
+        # 2. Real data arrived: purge fake mock data immediately
         DataSourceService.purge_mock_data(db)
 
-        # 3. Category lookup maps
+        # 3. Lookup caches in memory
         all_categories = db.query(Category).all()
         cat_map_by_name = {c.name.lower(): c for c in all_categories}
         cat_map_by_slug = {c.slug.lower(): c for c in all_categories}
-        default_cat = cat_map_by_slug.get("niche") or all_categories[0]
+        creators_cache = {c.username: c for c in db.query(Creator).all()}
+        reels_cache = {r.platform_media_id: r for r in db.query(Reel).all()}
 
+        # 4. Upsert Creators (Batch 1)
+        for item in raw_reels:
+            if item.creator_username not in creators_cache:
+                c = Creator(
+                    platform_user_id=item.creator_platform_id,
+                    username=item.creator_username,
+                    full_name=item.creator_name,
+                    profile_pic_url=item.creator_profile_pic,
+                    is_verified=item.creator_is_verified,
+                    followers_count=item.creator_followers,
+                    following_count=item.creator_following,
+                    biography=item.creator_bio,
+                    profile_url=item.creator_url
+                )
+                db.add(c)
+                creators_cache[item.creator_username] = c
+            else:
+                existing_c = creators_cache[item.creator_username]
+                existing_c.followers_count = item.creator_followers or existing_c.followers_count
+                existing_c.full_name = item.creator_name or existing_c.full_name
+                existing_c.profile_pic_url = item.creator_profile_pic or existing_c.profile_pic_url
+
+        db.flush()
+
+        # 5. Determine Categories with automatic balancing so no category is empty
+        category_assignments = []
+        for idx, item in enumerate(raw_reels):
+            if category_slug and category_slug.lower() in cat_map_by_slug:
+                target_cat = cat_map_by_slug[category_slug.lower()]
+            else:
+                classified_name = classify_reel_category(item.caption)
+                target_cat = cat_map_by_name.get(classified_name.lower())
+                if not target_cat:
+                    target_cat = all_categories[idx % len(all_categories)]
+            category_assignments.append(target_cat)
+
+        # Balance check: ensure all active categories have reels
+        cat_counts = {c.id: 0 for c in all_categories}
+        for c in category_assignments:
+            cat_counts[c.id] += 1
+
+        empty_cats = [c for c in all_categories if cat_counts[c.id] == 0]
+        if empty_cats and len(raw_reels) >= len(all_categories):
+            # Distribute surplus from the largest categories to fill empty ones
+            for empty_cat in empty_cats:
+                # Find an index from the most populated category
+                max_cat_id = max(cat_counts, key=cat_counts.get)
+                if cat_counts[max_cat_id] > 3:
+                    for i, assigned_cat in enumerate(category_assignments):
+                        if assigned_cat.id == max_cat_id:
+                            category_assignments[i] = empty_cat
+                            cat_counts[max_cat_id] -= 1
+                            cat_counts[empty_cat.id] += 1
+                            break
+
+        # 6. Upsert Reels & Precompute Metrics (Batch 2)
         ingested_count = 0
         updated_count = 0
-        affected_cat_ids = set()
 
-        # 4. Upsert Creators, Reels, and Metrics
         for idx, item in enumerate(raw_reels):
-            try:
-                # Target Category
-                if category_slug and category_slug.lower() in cat_map_by_slug:
-                    target_cat = cat_map_by_slug[category_slug.lower()]
-                else:
-                    classified_name = classify_reel_category(item.caption)
-                    target_cat = cat_map_by_name.get(classified_name.lower())
-                    if not target_cat:
-                        # Fallback distribution across available categories
-                        target_cat = all_categories[idx % len(all_categories)]
+            creator = creators_cache[item.creator_username]
+            target_cat = category_assignments[idx]
 
-                affected_cat_ids.add(target_cat.id)
+            eng = calculate_engagement_rate(item.view_count, item.like_count, item.comment_count, item.share_count)
+            vel = round(max(item.view_count / max((now - item.posted_at).total_seconds() / 3600.0, 0.1), 0.0), 2)
+            score = calculate_composite_popularity_score(
+                item.view_count, item.like_count, item.comment_count, item.share_count, item.posted_at, now, vel
+            )
 
-                # Upsert Creator
-                creator = db.query(Creator).filter(Creator.username == item.creator_username).first()
-                if not creator:
-                    creator = Creator(
-                        platform_user_id=item.creator_platform_id,
-                        username=item.creator_username,
-                        full_name=item.creator_name,
-                        profile_pic_url=item.creator_profile_pic,
-                        is_verified=item.creator_is_verified,
-                        followers_count=item.creator_followers,
-                        following_count=item.creator_following,
-                        biography=item.creator_bio,
-                        profile_url=item.creator_url
-                    )
-                    db.add(creator)
-                    db.flush()
-                else:
-                    creator.followers_count = item.creator_followers or creator.followers_count
-                    creator.full_name = item.creator_name or creator.full_name
-                    creator.profile_pic_url = item.creator_profile_pic or creator.profile_pic_url
-                    creator.is_verified = item.creator_is_verified
-                    db.flush()
-
-                # Upsert Reel
-                reel = db.query(Reel).filter(Reel.platform_media_id == item.platform_media_id).first()
-                if not reel:
-                    reel = Reel(
-                        platform_media_id=item.platform_media_id,
-                        permalink=item.permalink,
-                        caption=item.caption,
-                        thumbnail_url=item.thumbnail_url,
-                        video_url=item.video_url,
-                        duration=item.duration,
-                        posted_at=item.posted_at,
-                        category_id=target_cat.id,
-                        creator_id=creator.id,
-                        data_source_id=data_source.id,
-                        is_active=True
-                    )
-                    db.add(reel)
-                    db.flush()
-                    ingested_count += 1
-                else:
-                    reel.caption = item.caption or reel.caption
-                    reel.thumbnail_url = item.thumbnail_url or reel.thumbnail_url
-                    reel.video_url = item.video_url or reel.video_url
-                    reel.category_id = target_cat.id
-                    db.flush()
-                    updated_count += 1
-
-                # Previous metrics
-                prev_metrics = (
-                    db.query(ReelMetrics)
-                    .filter(ReelMetrics.reel_id == reel.id)
-                    .order_by(desc(ReelMetrics.recorded_at))
-                    .first()
+            reel = reels_cache.get(item.platform_media_id)
+            if not reel:
+                reel = Reel(
+                    platform_media_id=item.platform_media_id,
+                    permalink=item.permalink,
+                    caption=item.caption,
+                    thumbnail_url=item.thumbnail_url,
+                    video_url=item.video_url,
+                    duration=item.duration,
+                    posted_at=item.posted_at,
+                    category_id=target_cat.id,
+                    creator_id=creator.id,
+                    data_source_id=data_source.id,
+                    is_active=True,
+                    current_views=item.view_count,
+                    current_likes=item.like_count,
+                    current_comments=item.comment_count,
+                    current_shares=item.share_count,
+                    current_saves=item.save_count,
+                    current_engagement_rate=eng,
+                    current_trending_score=score,
+                    current_growth_velocity=vel
                 )
-
-                # New Metrics
-                engagement_rate = calculate_engagement_rate(
-                    item.view_count, item.like_count, item.comment_count, item.share_count
-                )
-                metrics = ReelMetrics(
-                    reel_id=reel.id,
-                    view_count=item.view_count,
-                    like_count=item.like_count,
-                    comment_count=item.comment_count,
-                    share_count=item.share_count,
-                    save_count=item.save_count,
-                    engagement_rate=engagement_rate,
-                    recorded_at=now
-                )
-                db.add(metrics)
-                db.flush()
-
-                # Velocity & Trending Score
-                velocity = calculate_growth_velocity(
-                    current_metrics=metrics,
-                    previous_metrics=prev_metrics,
-                    posted_at=reel.posted_at,
-                    current_time=now
-                )
-                score = calculate_composite_popularity_score(
-                    views=metrics.view_count,
-                    likes=metrics.like_count,
-                    comments=metrics.comment_count,
-                    shares=metrics.share_count,
-                    posted_at=reel.posted_at,
-                    current_time=now,
-                    velocity=velocity
-                )
-
-                trending_record = TrendingScore(
-                    reel_id=reel.id,
-                    period="24h",
-                    score=score,
-                    growth_velocity=velocity,
-                    recorded_at=now
-                )
-                db.add(trending_record)
-
-                # Update denormalized cached metrics on Reel
-                reel.current_views = metrics.view_count
-                reel.current_likes = metrics.like_count
-                reel.current_comments = metrics.comment_count
-                reel.current_shares = metrics.share_count
-                reel.current_saves = metrics.save_count
-                reel.current_engagement_rate = engagement_rate
+                db.add(reel)
+                reels_cache[item.platform_media_id] = reel
+                ingested_count += 1
+            else:
+                reel.caption = item.caption or reel.caption
+                reel.thumbnail_url = item.thumbnail_url or reel.thumbnail_url
+                reel.video_url = item.video_url or reel.video_url
+                reel.category_id = target_cat.id
+                reel.current_views = item.view_count
+                reel.current_likes = item.like_count
+                reel.current_comments = item.comment_count
+                reel.current_shares = item.share_count
+                reel.current_saves = item.save_count
+                reel.current_engagement_rate = eng
                 reel.current_trending_score = score
-                reel.current_growth_velocity = velocity
+                reel.current_growth_velocity = vel
+                updated_count += 1
 
-            except Exception as e:
-                logger.error(f"Error processing reel {item.platform_media_id}: {e}")
+        db.flush()
 
-        db.commit()
+        # 7. Add Metrics & TrendingScore snapshots (Batch 3)
+        for idx, item in enumerate(raw_reels):
+            reel = reels_cache[item.platform_media_id]
+            eng = reel.current_engagement_rate
+            vel = reel.current_growth_velocity
+            score = reel.current_trending_score
 
-        # Recalculate ranks for all affected categories
-        for cat_id in affected_cat_ids:
-            recalculate_category_ranks(db, cat_id)
+            m = ReelMetrics(
+                reel_id=reel.id,
+                view_count=item.view_count,
+                like_count=item.like_count,
+                comment_count=item.comment_count,
+                share_count=item.share_count,
+                save_count=item.save_count,
+                engagement_rate=eng,
+                recorded_at=now
+            )
+            db.add(m)
 
-        data_source.last_synced_at = now
+            ts = TrendingScore(
+                reel_id=reel.id,
+                period="24h",
+                score=score,
+                growth_velocity=vel,
+                recorded_at=now
+            )
+            db.add(ts)
+
+        # 8. Recalculate Category Ranks in memory
+        for cat in all_categories:
+            cat_reels = [r for r in reels_cache.values() if r.category_id == cat.id and r.is_active]
+            cat_reels.sort(key=lambda r: r.current_trending_score or 0.0, reverse=True)
+            for rank, r in enumerate(cat_reels, 1):
+                r.current_rank = rank
+
+        # Final single commit
         total_synced = ingested_count + updated_count
+        data_source.last_synced_at = now
         data_source.status_message = f"Successfully synced {total_synced} real reels at {now.strftime('%H:%M:%S UTC')}"
         db.commit()
 

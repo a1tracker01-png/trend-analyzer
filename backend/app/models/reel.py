@@ -8,10 +8,10 @@ class Reel(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     platform_media_id = Column(String(150), unique=True, nullable=False, index=True)
-    permalink = Column(String(500), nullable=False)
+    permalink = Column(Text, nullable=False)
     caption = Column(Text, nullable=True)
-    thumbnail_url = Column(String(500), nullable=True)
-    video_url = Column(String(500), nullable=True)
+    thumbnail_url = Column(Text, nullable=True)
+    video_url = Column(Text, nullable=True)
     duration = Column(Float, default=0.0)
     posted_at = Column(DateTime(timezone=True), nullable=False, index=True)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False, index=True)
