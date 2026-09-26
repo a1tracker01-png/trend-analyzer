@@ -35,16 +35,16 @@ class DataSourceService:
     def get_provider(provider_type: str, config: Optional[dict] = None) -> BaseDataSourceProvider:
         provider_cls = PROVIDER_REGISTRY.get(provider_type)
         if not provider_cls:
-            logger.warning(f"Provider {provider_type} not found, defaulting to mock_provider")
-            provider_cls = MockPermittedProvider
+            logger.warning(f"Provider {provider_type} not found, defaulting to apify_provider")
+            provider_cls = ApifyInstagramProvider
         return provider_cls(config or {})
 
     @staticmethod
     def get_or_create_data_source(
         db: Session,
-        name: str = "Permitted Sandbox Provider",
-        provider_type: str = "mock_provider",
-        auth_type: str = "none",
+        name: str = "Apify Real Instagram Feed",
+        provider_type: str = "apify_provider",
+        auth_type: str = "api_key",
         config: Optional[dict] = None
     ) -> DataSource:
         ds = db.query(DataSource).filter(DataSource.provider_type == provider_type).first()
@@ -63,11 +63,28 @@ class DataSourceService:
         return ds
 
     @staticmethod
+    def purge_mock_data(db: Session) -> int:
+        """Deletes all sample / synthetic reels from the database."""
+        mock_ds = db.query(DataSource).filter(DataSource.provider_type == "mock_provider").first()
+        if not mock_ds:
+            return 0
+
+        mock_reel_ids = [r.id for r in db.query(Reel.id).filter(Reel.data_source_id == mock_ds.id).all()]
+        count = len(mock_reel_ids)
+        if count > 0:
+            db.query(TrendingScore).filter(TrendingScore.reel_id.in_(mock_reel_ids)).delete(synchronize_session=False)
+            db.query(ReelMetrics).filter(ReelMetrics.reel_id.in_(mock_reel_ids)).delete(synchronize_session=False)
+            db.query(Reel).filter(Reel.data_source_id == mock_ds.id).delete(synchronize_session=False)
+            db.commit()
+            logger.info(f"Purged {count} fake seed reels from database.")
+        return count
+
+    @staticmethod
     def sync_category(
         db: Session,
         category: Category,
         data_source: Optional[DataSource] = None,
-        limit: int = 25
+        limit: int = 50
     ) -> SyncResult:
         if not data_source:
             data_source = db.query(DataSource).filter(DataSource.is_active == True).first()
@@ -87,7 +104,7 @@ class DataSourceService:
         try:
             raw_reels = provider.fetch_reels_by_category(category.name, limit=limit)
         except Exception as e:
-            logger.error(f"Error fetching data from {provider.get_provider_name()}: {e}")
+            logger.error(f"Error fetching from {provider.get_provider_name()}: {e}")
             result.errors.append(str(e))
             data_source.status_message = f"Sync error: {str(e)[:180]}"
             data_source.last_synced_at = now
@@ -95,10 +112,14 @@ class DataSourceService:
             return result
 
         if not raw_reels:
-            data_source.status_message = f"0 reels returned for {category.name} at {now.strftime('%H:%M:%S UTC')}"
+            data_source.status_message = f"Apify returned 0 items for {category.name}."
             data_source.last_synced_at = now
             db.commit()
             return result
+
+        # Purge fake mock data now that real data has arrived
+        if data_source.provider_type in ("apify_provider", "official_graph_api"):
+            DataSourceService.purge_mock_data(db)
 
         for item in raw_reels:
             try:
@@ -147,6 +168,7 @@ class DataSourceService:
                 else:
                     reel.caption = item.caption or reel.caption
                     reel.thumbnail_url = item.thumbnail_url or reel.thumbnail_url
+                    reel.video_url = item.video_url or reel.video_url
                     db.flush()
                     result.reels_updated += 1
 
@@ -221,10 +243,8 @@ class DataSourceService:
 
         recalculate_category_ranks(db, category.id)
 
-        rate_info = provider.get_rate_limit_info()
         data_source.last_synced_at = now
-        data_source.rate_limit_remaining = rate_info.get("remaining", 200)
-        data_source.status_message = f"Synced {result.reels_ingested + result.reels_updated} reels at {now.strftime('%H:%M:%S UTC')}"
+        data_source.status_message = f"Successfully synced {result.reels_ingested + result.reels_updated} real reels at {now.strftime('%H:%M:%S UTC')}"
         db.commit()
 
         return result

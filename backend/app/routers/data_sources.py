@@ -122,3 +122,9 @@ def trigger_data_source_sync(
         "data_source": source.name,
         "results": results
     }
+
+@router.post("/purge-mock-data")
+def purge_mock_data(db: Session = Depends(get_db)):
+    """Removes all synthetic / fake sample reels from the database."""
+    count = DataSourceService.purge_mock_data(db)
+    return {"status": "success", "purged_count": count}
