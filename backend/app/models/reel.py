@@ -18,6 +18,7 @@ class Reel(Base):
     creator_id = Column(Integer, ForeignKey("creators.id"), nullable=False, index=True)
     data_source_id = Column(Integer, ForeignKey("data_sources.id"), nullable=False, index=True)
     is_active = Column(Boolean, default=True)
+    country = Column(String(100), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 

@@ -26,9 +26,19 @@ const SORT_OPTIONS = [
   { value: 'newest', label: 'Newest First' },
 ];
 
+const REGION_TABS = [
+  { id: 'all', label: 'All Regions', flag: '🌏', code: 'IN • PK • BD • NP' },
+  { id: 'India', label: 'India', flag: '🇮🇳' },
+  { id: 'Pakistan', label: 'Pakistan', flag: '🇵🇰' },
+  { id: 'Bangladesh', label: 'Bangladesh', flag: '🇧🇩' },
+  { id: 'Nepal', label: 'Nepal', flag: '🇳🇵' },
+];
+
 export default function FilterBar({
   activeFilter,
   onChangeFilter,
+  selectedCountry,
+  onChangeCountry,
   sortBy,
   onChangeSort,
   searchTerm,
@@ -117,10 +127,44 @@ export default function FilterBar({
 
       </div>
 
+      {/* South Asian Country Selector Row */}
+      <div className="flex items-center gap-1.5 pt-3 mt-3 border-t border-slate-800/60 overflow-x-auto pb-0.5">
+        <span className="text-[11px] font-semibold text-slate-400 mr-1 flex items-center gap-1 shrink-0">
+          <span>Region:</span>
+        </span>
+        {REGION_TABS.map((r) => {
+          const isSelected = (selectedCountry || 'all') === r.id;
+          return (
+            <button
+              key={r.id}
+              onClick={() => onChangeCountry && onChangeCountry(r.id)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold transition shrink-0 ${
+                isSelected
+                  ? 'bg-purple-600/30 text-purple-200 border border-purple-500/50 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
+              }`}
+            >
+              <span>{r.flag}</span>
+              <span>{r.label}</span>
+              {r.code && (
+                <span className="text-[10px] text-slate-500 font-normal hidden sm:inline">
+                  ({r.code})
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Filter Status Line */}
       <div className="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span>Showing <strong className="text-slate-200">{totalItems}</strong> reels</span>
+          {selectedCountry && selectedCountry !== 'all' && (
+            <span className="text-purple-400 font-medium">
+              • Region: {selectedCountry}
+            </span>
+          )}
           {activeFilter === 'last_24h' && (
             <span className="text-blue-400 font-medium">• Filtered strictly to posts within the last 24 hours</span>
           )}

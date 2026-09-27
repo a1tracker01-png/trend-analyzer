@@ -198,10 +198,22 @@ def trigger_fresh_scrape(
 
 @router.post("/purge-mock-data")
 def purge_mock_data(db: Session = Depends(get_db)):
-    """Removes all synthetic / fake sample reels from the database."""
+    """Removes all synthetic / fake sample reels and global reels from the database."""
     count = DataSourceService.purge_mock_data(db)
+    count_global = DataSourceService.purge_global_data(db)
+    total = count + count_global
+    return {
+        "status": "success",
+        "purged_count": total,
+        "message": f"Successfully deleted {total} non-regional & seed reels from database."
+    }
+
+@router.post("/purge-global-data")
+def purge_global_data(db: Session = Depends(get_db)):
+    """Removes non-regional global reels so feed strictly contains India, Pakistan, Bangladesh, and Nepal."""
+    count = DataSourceService.purge_global_data(db)
     return {
         "status": "success",
         "purged_count": count,
-        "message": f"Successfully deleted {count} fake seed reels from database."
+        "message": f"Successfully deleted {count} global reels from database."
     }

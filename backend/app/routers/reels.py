@@ -16,17 +16,19 @@ def get_reels(
     category: str = Query(..., description="Category slug ('niche', 'ai', 'other') or ID"),
     filter_mode: str = Query("all", description="Filter mode: 'all', 'last_24h', 'fastest_growing', 'top_100'"),
     sort_by: Optional[str] = Query(None, description="Sort by: 'trending', 'velocity', 'views', 'likes', 'engagement', 'newest'"),
+    country: Optional[str] = Query(None, description="Country filter: 'India', 'Pakistan', 'Bangladesh', 'Nepal' or 'all'"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     search: Optional[str] = Query(None, description="Search term for caption or creator"),
     db: Session = Depends(get_db)
 ):
     """
-    Returns reels matching the category, filter, and sort criteria.
+    Returns reels matching the category, filter, country, and sort criteria.
     Supports:
       - Last 24 Hours: strictly reels posted within the last 24 hours
       - Fastest Growing: ordered by growth velocity
       - Top 100: top 100 ranked by popularity score
+      - Country: India, Pakistan, Bangladesh, Nepal
       - Popularity sorting
     """
     cat = ReelService.get_category_by_slug_or_id(db, category)
@@ -38,6 +40,7 @@ def get_reels(
         category_id=cat.id,
         filter_mode=filter_mode,
         sort_by=sort_by,
+        country=country,
         limit=limit,
         offset=offset,
         search=search

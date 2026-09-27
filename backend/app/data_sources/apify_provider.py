@@ -5,6 +5,9 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from backend.app.data_sources.base import BaseDataSourceProvider, ReelRawData
 
@@ -17,12 +20,123 @@ CANDIDATE_ACTORS = [
     "apify~instagram-hashtag-scraper"
 ]
 
+# Strictly focused on South Asia region: mixed of India, Pakistan, Bangladesh, Nepal
 CATEGORY_USERNAMES = {
-    "niche": ["techradar", "theverge", "mkbhd", "cnet", "wired", "unboxtherapy"],
-    "ai": ["chatgpt", "openai", "midjourney.gallery", "huggingface", "therundownai"],
-    "other": ["programmer.humor", "thecoderlife", "techhumor", "faares.q", "startup.life"],
-    "blockchain": ["ethereum", "coinbase", "binance", "polygon.technology", "rpn"]
+    "niche": [
+        # India
+        "technicalguruji", "techburner", "trakintech", "geekyranjitofficial",
+        # Pakistan
+        "videowalisarkar", "mastechofficial",
+        # Bangladesh
+        "sohag360", "samzone_official",
+        # Nepal
+        "gadgetbytenepal", "techpana"
+    ],
+    "ai": [
+        # India
+        "beebomco", "varunmayya", "krishnaik06", "100xengineers",
+        # Pakistan
+        "hisham.sarwar", "ziaukhan",
+        # Bangladesh
+        "jhankarmahbub", "programminghero",
+        # Nepal
+        "fusemachines", "techpana"
+    ],
+    "other": [
+        # India
+        "ezsnippet", "striver_79", "lovebabbar1", "harkirat_singh",
+        # Pakistan
+        "azadchaiwala", "kashifmajeed",
+        # Bangladesh
+        "learnwithsumit", "anisulislam.official",
+        # Nepal
+        "routineofnepalbanda", "tech_sathi"
+    ],
+    "blockchain": [
+        # India
+        "polygon.technology", "sandeepnailwal", "pushpendratech", "coindcx",
+        # Pakistan
+        "waqarzaka",
+        # Bangladesh
+        "blockchainbangladesh",
+        # Nepal
+        "web3nepal"
+    ]
 }
+
+USER_COUNTRY_MAP = {
+    # India
+    "technicalguruji": "India",
+    "techburner": "India",
+    "trakintech": "India",
+    "geekyranjitofficial": "India",
+    "geekyranjit": "India",
+    "beebomco": "India",
+    "varunmayya": "India",
+    "krishnaik06": "India",
+    "100xengineers": "India",
+    "ezsnippet": "India",
+    "striver_79": "India",
+    "lovebabbar1": "India",
+    "harkirat_singh": "India",
+    "kirat_ins": "India",
+    "polygon.technology": "India",
+    "sandeepnailwal": "India",
+    "pushpendratech": "India",
+    "coindcx": "India",
+    "coinswitch_co": "India",
+    "shashank_codes": "India",
+    "tanaypratap": "India",
+
+    # Pakistan
+    "videowalisarkar": "Pakistan",
+    "mastechofficial": "Pakistan",
+    "mastech_official": "Pakistan",
+    "xeetechcare": "Pakistan",
+    "hisham.sarwar": "Pakistan",
+    "ziaukhan": "Pakistan",
+    "azadchaiwala": "Pakistan",
+    "azadhai.official": "Pakistan",
+    "kashifmajeed": "Pakistan",
+    "waqarzaka": "Pakistan",
+
+    # Bangladesh
+    "sohag360": "Bangladesh",
+    "samzone_official": "Bangladesh",
+    "samzone": "Bangladesh",
+    "jhankarmahbub": "Bangladesh",
+    "programminghero": "Bangladesh",
+    "learnwithsumit": "Bangladesh",
+    "anisulislam.official": "Bangladesh",
+    "blockchainbangladesh": "Bangladesh",
+
+    # Nepal
+    "gadgetbytenepal": "Nepal",
+    "techpana": "Nepal",
+    "fusemachines": "Nepal",
+    "routineofnepalbanda": "Nepal",
+    "tech_sathi": "Nepal",
+    "web3nepal": "Nepal"
+}
+
+def detect_country(caption: str = "", username: str = "", bio: str = "") -> Optional[str]:
+    """Determines whether a creator/reel is from India, Pakistan, Bangladesh, or Nepal."""
+    u = (username or "").lower().replace("@", "").strip()
+    if u in USER_COUNTRY_MAP:
+        return USER_COUNTRY_MAP[u]
+
+    full_text = f"{caption} {u} {bio}".lower()
+    import re
+    if re.search(r"\b(india|indian|delhi|mumbai|bangalore|bengaluru|hyderabad|pune|noida|chennai|kolkata|gurgaon|gurugram|hindi|rupees|₹|inr|desitech|bharat)\b", full_text):
+        return "India"
+    if re.search(r"\b(pakistan|pakistani|karachi|lahore|islamabad|rawalpindi|peshawar|faisalabad|urdu|pkr)\b", full_text):
+        return "Pakistan"
+    if re.search(r"\b(bangladesh|bangladeshi|dhaka|chittagong|sylhet|bengali|bangla|bdt|taka)\b", full_text):
+        return "Bangladesh"
+    if re.search(r"\b(nepal|nepali|kathmandu|pokhara|lalitpur|npr|nepalitech)\b", full_text):
+        return "Nepal"
+
+    return None
 
 def _safe_int(val: Any, default: int = 0) -> int:
     """Safely extracts an integer from numbers, dicts (like {'count': 10}), or strings ('15K')."""
@@ -62,9 +176,9 @@ def _safe_str(val: Any, default: str = "") -> str:
 def classify_reel_category(caption: str = "", username: str = "") -> str:
     """
     Accurately classifies reels into the 4 target categories:
-    1. Blockchain: Web3, Solidity, crypto, DeFi, Ethereum, Bitcoin, NFT, trading.
+    1. Blockchain: Web3, Solidity, crypto, DeFi, Polygon, TenUp, Ethereum, Bitcoin.
     2. Other: Tech-adjacent viral trends, developer comedy/memes, prompt photo tricks, tech lifestyle.
-    3. AI: Breakthrough AI models, ChatGPT, Midjourney, Claude, Sora, DeepSeek, AI tools.
+    3. AI: Breakthrough AI models, ChatGPT, Midjourney, Claude, Sora, DeepSeek, AI tools, LLMs.
     4. Niche: Breakthrough gadgets, secret websites, web apps, iOS/Android apps, hardware.
     """
     import re
@@ -74,30 +188,40 @@ def classify_reel_category(caption: str = "", username: str = "") -> str:
 
     # 1. Direct creator handles known for specific categories
     if username in [
-        "chatgpt", "openai", "midjourney.gallery", "therundownai", "huggingface", "replit", "ai.frontiers"
+        "beebomco", "varunmayya", "krishnaik06", "100xengineers",
+        "hisham.sarwar", "ziaukhan", "jhankarmahbub", "programminghero",
+        "fusemachines", "chatgpt", "openai", "midjourney.gallery", "therundownai"
     ]:
         return "AI"
 
     if username in [
-        "ethereum", "coinbase", "binance", "polygon.technology", "solana", "arbitrum"
+        "polygon.technology", "sandeepnailwal", "pushpendratech", "coindcx", "coinswitch_co",
+        "waqarzaka", "blockchainbangladesh", "web3nepal",
+        "ethereum", "coinbase", "binance", "solana"
     ]:
         return "Blockchain"
 
     if username in [
-        "programmer.humor", "thecoderlife", "techhumor", "faares.q", "startup.life", "dev_humor", "coder.humor"
+        "ezsnippet", "striver_79", "lovebabbar1", "harkirat_singh", "kirat_ins",
+        "azadchaiwala", "kashifmajeed", "learnwithsumit", "anisulislam.official",
+        "routineofnepalbanda", "tech_sathi",
+        "programmer.humor", "thecoderlife", "techhumor", "faares.q"
     ]:
         return "Other"
 
     if username in [
-        "techradar", "theverge", "mkbhd", "cnet", "wired", "wiredreviews", "unboxtherapy", "tomsguide", "jake31krol", "gadgetsboy"
+        "technicalguruji", "techburner", "trakintech", "geekyranjitofficial", "geekyranjit",
+        "videowalisarkar", "mastechofficial", "sohag360", "samzone_official",
+        "gadgetbytenepal", "techpana",
+        "techradar", "theverge", "mkbhd", "cnet"
     ]:
         return "Niche"
 
-    # 2. Strict regex matching with word boundaries to avoid false positives (e.g. 'eth' in 'something')
+    # 2. Strict regex matching with word boundaries
     blockchain_pattern = (
         r"\b(blockchain|crypto|cryptocurrency|bitcoin|btc|ethereum|eth|solidity|"
         r"web3|defi|smart contracts?|tokens?|nfts?|binance|metamask|airdrop|"
-        r"polygon|solana|arbitrum|zk-rollup|coinbase)\b"
+        r"polygon|solana|arbitrum|zk-rollup|coinbase|coindcx|wazirx|tenup)\b"
     )
     if re.search(blockchain_pattern, full_text):
         return "Blockchain"
@@ -105,7 +229,7 @@ def classify_reel_category(caption: str = "", username: str = "") -> str:
     other_pattern = (
         r"\b(meme|memes|funny|humor|comedy|joke|jokes|relatable|programmer humor|"
         r"developer life|coder life|junior vs senior|unclaimedmoney|lifestyle|"
-        r"talking avatar|tech meme|hacks?|lifehack)\b"
+        r"talking avatar|tech meme|hacks?|lifehack|intern|placement|salary|faang|corporate)\b"
     )
     if re.search(other_pattern, full_text):
         return "Other"
@@ -118,7 +242,7 @@ def classify_reel_category(caption: str = "", username: str = "") -> str:
     if re.search(ai_pattern, full_text):
         return "AI"
 
-    # 3. Default: Niche (Tech News, Gadgets, Web Apps, Hardware, Mobile Apps)
+    # 3. Default: Niche
     return "Niche"
 
 class ApifyInstagramProvider(BaseDataSourceProvider):
@@ -232,11 +356,16 @@ class ApifyInstagramProvider(BaseDataSourceProvider):
         if category_name and category_name.lower() in CATEGORY_USERNAMES:
             usernames = CATEGORY_USERNAMES[category_name.lower()]
         else:
+            # Balanced mix across India, Pakistan, Bangladesh, and Nepal
             usernames = [
-                "techradar", "theverge", "mkbhd", "cnet",
-                "chatgpt", "openai", "midjourney.gallery",
-                "thecoderlife", "faares.q",
-                "coinbase", "ethereum"
+                # India
+                "techburner", "technicalguruji", "beebomco", "ezsnippet", "polygon.technology",
+                # Pakistan
+                "videowalisarkar", "mastechofficial", "hisham.sarwar", "azadchaiwala", "waqarzaka",
+                # Bangladesh
+                "sohag360", "samzone_official", "jhankarmahbub", "learnwithsumit",
+                # Nepal
+                "gadgetbytenepal", "techpana", "routineofnepalbanda", "tech_sathi"
             ]
 
         payload = {
@@ -504,6 +633,16 @@ class ApifyInstagramProvider(BaseDataSourceProvider):
                 if not owner_username or owner_username == "tech_creator":
                     continue
 
+                owner_bio = _safe_str(owner.get("biography") or item.get("ownerBiography"))
+                detected_country = detect_country(
+                    caption=caption,
+                    username=owner_username,
+                    bio=owner_bio
+                )
+                # Strictly ensure item belongs to South Asia (India, Pakistan, Bangladesh, Nepal)
+                if not detected_country:
+                    continue
+
                 owner_name = (
                     item.get("ownerFullName")
                     or item.get("fullName") 
@@ -596,8 +735,9 @@ class ApifyInstagramProvider(BaseDataSourceProvider):
                     creator_is_verified=owner_verified,
                     creator_followers=followers,
                     creator_following=150,
-                    creator_bio=_safe_str(owner.get("biography") or item.get("ownerBiography")),
+                    creator_bio=owner_bio,
                     creator_url=f"https://www.instagram.com/{owner_username}/",
+                    country=detected_country,
                     view_count=views,
                     like_count=likes,
                     comment_count=comments,

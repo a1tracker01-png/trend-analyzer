@@ -83,6 +83,49 @@ class DataSourceService:
         return count
 
     @staticmethod
+    def purge_global_data(db: Session) -> int:
+        """Purges old global/non-regional reels to ensure feed is strictly India, Pakistan, Bangladesh, and Nepal."""
+        from sqlalchemy import or_
+        global_usernames = [
+            "techradar", "theverge", "mkbhd", "cnet", "wired", "unboxtherapy",
+            "chatgpt", "openai", "midjourney.gallery", "huggingface", "therundownai",
+            "programmer.humor", "thecoderlife", "techhumor", "faares.q", "startup.life",
+            "ethereum", "coinbase", "binance", "rpn", "jake31krol", "lolesports", "valorantesports",
+            "chipganassiracing", "alois_nl", "orenmeetsworld", "mollyburkeofficial", "dudeperfect", "azia_mery"
+        ]
+        creators = db.query(Creator.id).filter(Creator.username.in_(global_usernames)).all()
+        creator_ids = [c[0] for c in creators]
+        
+        reels = db.query(Reel.id).filter(
+            or_(
+                Reel.creator_id.in_(creator_ids),
+                Reel.country.notin_(["India", "Pakistan", "Bangladesh", "Nepal"]) | (Reel.country == None)
+            )
+        ).all()
+        reel_ids = [r[0] for r in reels]
+        count = len(reel_ids)
+
+        if count > 0:
+            db.query(TrendingScore).filter(TrendingScore.reel_id.in_(reel_ids)).delete(synchronize_session=False)
+            db.query(ReelMetrics).filter(ReelMetrics.reel_id.in_(reel_ids)).delete(synchronize_session=False)
+            db.query(Reel).filter(Reel.id.in_(reel_ids)).delete(synchronize_session=False)
+            db.commit()
+            logger.info(f"Purged {count} non-regional global reels from database.")
+
+        # Clean up any orphaned creators without reels or without South Asian country
+        try:
+            remaining_creator_ids = [r[0] for r in db.query(Reel.creator_id).distinct().all()]
+            db.query(Creator).filter(
+                Creator.id.notin_(remaining_creator_ids)
+            ).delete(synchronize_session=False)
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Could not purge orphaned creators: {e}")
+            db.rollback()
+
+        return count
+
+    @staticmethod
     def sync_unified(
         db: Session,
         data_source: DataSource,
@@ -136,7 +179,9 @@ class DataSourceService:
             }
 
         # 2. Real data arrived: purge fake mock data immediately
+        # 2. Real data arrived: purge fake mock data and non-regional global data
         DataSourceService.purge_mock_data(db)
+        DataSourceService.purge_global_data(db)
 
         # 3. Lookup caches in memory
         all_categories = db.query(Category).all()
@@ -157,7 +202,8 @@ class DataSourceService:
                     followers_count=item.creator_followers,
                     following_count=item.creator_following,
                     biography=item.creator_bio,
-                    profile_url=item.creator_url
+                    profile_url=item.creator_url,
+                    country=item.country or "India"
                 )
                 db.add(c)
                 creators_cache[item.creator_username] = c
@@ -166,6 +212,8 @@ class DataSourceService:
                 existing_c.followers_count = item.creator_followers or existing_c.followers_count
                 existing_c.full_name = item.creator_name or existing_c.full_name
                 existing_c.profile_pic_url = item.creator_profile_pic or existing_c.profile_pic_url
+                if item.country:
+                    existing_c.country = item.country
 
         db.flush()
 
@@ -205,6 +253,7 @@ class DataSourceService:
                     category_id=target_cat.id,
                     creator_id=creator.id,
                     data_source_id=data_source.id,
+                    country=item.country or creator.country or "India",
                     is_active=True,
                     current_views=item.view_count,
                     current_likes=item.like_count,
@@ -223,6 +272,7 @@ class DataSourceService:
                 reel.thumbnail_url = item.thumbnail_url or reel.thumbnail_url
                 reel.video_url = item.video_url or reel.video_url
                 reel.category_id = target_cat.id
+                reel.country = item.country or creator.country or reel.country or "India"
                 reel.current_views = item.view_count
                 reel.current_likes = item.like_count
                 reel.current_comments = item.comment_count
@@ -345,56 +395,80 @@ class DataSourceService:
 
         if data_source.provider_type in ("apify_provider", "official_graph_api"):
             DataSourceService.purge_mock_data(db)
+            DataSourceService.purge_global_data(db)
 
+        creators_cache = {c.username: c for c in db.query(Creator).all()}
+        reels_cache = {r.platform_media_id: r for r in db.query(Reel).all()}
+
+        # 1. Creators upsert
+        new_creators = False
+        for item in raw_reels:
+            if item.creator_username not in creators_cache:
+                creator = Creator(
+                    platform_user_id=item.creator_platform_id,
+                    username=item.creator_username,
+                    full_name=item.creator_name,
+                    profile_pic_url=item.creator_profile_pic,
+                    is_verified=item.creator_is_verified,
+                    followers_count=item.creator_followers,
+                    following_count=item.creator_following,
+                    biography=item.creator_bio,
+                    profile_url=item.creator_url,
+                    country=item.country or "India"
+                )
+                db.add(creator)
+                creators_cache[item.creator_username] = creator
+                new_creators = True
+            else:
+                creator = creators_cache[item.creator_username]
+                creator.followers_count = item.creator_followers or creator.followers_count
+                creator.full_name = item.creator_name or creator.full_name
+                creator.profile_pic_url = item.creator_profile_pic or creator.profile_pic_url
+                creator.is_verified = item.creator_is_verified
+                if item.country:
+                    creator.country = item.country
+
+        if new_creators:
+            db.flush()
+
+        # 2. Reels upsert
+        new_reels = False
+        for item in raw_reels:
+            creator = creators_cache[item.creator_username]
+            if item.platform_media_id not in reels_cache:
+                reel = Reel(
+                    platform_media_id=item.platform_media_id,
+                    permalink=item.permalink,
+                    caption=item.caption,
+                    thumbnail_url=item.thumbnail_url,
+                    video_url=item.video_url,
+                    duration=item.duration,
+                    posted_at=item.posted_at,
+                    category_id=category.id,
+                    creator_id=creator.id,
+                    data_source_id=data_source.id,
+                    country=item.country or creator.country or "India",
+                    is_active=True
+                )
+                db.add(reel)
+                reels_cache[item.platform_media_id] = reel
+                result.reels_ingested += 1
+                new_reels = True
+            else:
+                reel = reels_cache[item.platform_media_id]
+                reel.caption = item.caption or reel.caption
+                reel.thumbnail_url = item.thumbnail_url or reel.thumbnail_url
+                reel.video_url = item.video_url or reel.video_url
+                reel.country = item.country or creator.country or reel.country or "India"
+                result.reels_updated += 1
+
+        if new_reels:
+            db.flush()
+
+        # 3. Metrics and Trending Scores
         for item in raw_reels:
             try:
-                creator = db.query(Creator).filter(Creator.username == item.creator_username).first()
-                if not creator:
-                    creator = Creator(
-                        platform_user_id=item.creator_platform_id,
-                        username=item.creator_username,
-                        full_name=item.creator_name,
-                        profile_pic_url=item.creator_profile_pic,
-                        is_verified=item.creator_is_verified,
-                        followers_count=item.creator_followers,
-                        following_count=item.creator_following,
-                        biography=item.creator_bio,
-                        profile_url=item.creator_url
-                    )
-                    db.add(creator)
-                    db.flush()
-                else:
-                    creator.followers_count = item.creator_followers or creator.followers_count
-                    creator.full_name = item.creator_name or creator.full_name
-                    creator.profile_pic_url = item.creator_profile_pic or creator.profile_pic_url
-                    creator.is_verified = item.creator_is_verified
-                    db.flush()
-
-                reel = db.query(Reel).filter(Reel.platform_media_id == item.platform_media_id).first()
-                if not reel:
-                    reel = Reel(
-                        platform_media_id=item.platform_media_id,
-                        permalink=item.permalink,
-                        caption=item.caption,
-                        thumbnail_url=item.thumbnail_url,
-                        video_url=item.video_url,
-                        duration=item.duration,
-                        posted_at=item.posted_at,
-                        category_id=category.id,
-                        creator_id=creator.id,
-                        data_source_id=data_source.id,
-                        is_active=True
-                    )
-                    db.add(reel)
-                    db.flush()
-                    result.reels_ingested += 1
-                else:
-                    reel.caption = item.caption or reel.caption
-                    reel.thumbnail_url = item.thumbnail_url or reel.thumbnail_url
-                    reel.video_url = item.video_url or reel.video_url
-                    db.flush()
-                    result.reels_updated += 1
-
+                reel = reels_cache[item.platform_media_id]
                 prev_metrics = (
                     db.query(ReelMetrics)
                     .filter(ReelMetrics.reel_id == reel.id)
@@ -416,7 +490,6 @@ class DataSourceService:
                     recorded_at=now
                 )
                 db.add(metrics)
-                db.flush()
                 result.metrics_recorded += 1
 
                 velocity = calculate_growth_velocity(

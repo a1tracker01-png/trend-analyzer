@@ -6,8 +6,11 @@ export async function fetchCategories() {
   return res.json();
 }
 
-export async function fetchCategoryStats(slugOrId) {
-  const res = await fetch(`${API_BASE}/categories/${slugOrId}`);
+export async function fetchCategoryStats(slugOrId, country = null) {
+  const url = country && country !== 'all'
+    ? `${API_BASE}/categories/${slugOrId}?country=${encodeURIComponent(country)}`
+    : `${API_BASE}/categories/${slugOrId}`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Failed to fetch category stats');
   return res.json();
 }
@@ -16,6 +19,7 @@ export async function fetchReels({
   category,
   filterMode = 'all',
   sortBy = null,
+  country = null,
   limit = 50,
   offset = 0,
   search = null,
@@ -27,6 +31,7 @@ export async function fetchReels({
     offset: offset.toString(),
   });
   if (sortBy) params.append('sort_by', sortBy);
+  if (country && country !== 'all') params.append('country', country);
   if (search) params.append('search', search);
 
   const res = await fetch(`${API_BASE}/reels?${params.toString()}`);
@@ -124,6 +129,17 @@ export async function purgeMockData() {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.detail || data.message || 'Failed to purge mock data');
+  }
+  return res.json();
+}
+
+export async function purgeGlobalData() {
+  const res = await fetch(`${API_BASE}/data-sources/purge-global-data`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || data.message || 'Failed to purge global data');
   }
   return res.json();
 }

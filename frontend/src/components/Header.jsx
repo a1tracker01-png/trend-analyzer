@@ -45,12 +45,13 @@ export default function Header({
                 <span className="font-extrabold text-xl tracking-tight bg-gradient-to-r from-rose-400 via-purple-300 to-indigo-300 bg-clip-text text-transparent">
                   ReelsPulse
                 </span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                  Tech Radar
+                <span className="text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-1">
+                  <span>South Asia</span>
+                  <span>🇮🇳 🇵🇰 🇧🇩 🇳🇵</span>
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden lg:block">
-                Tech • AI • Blockchain • Viral Trends Velocity Engine
+                India • Pakistan • Bangladesh • Nepal Velocity Engine
               </p>
             </div>
           </div>

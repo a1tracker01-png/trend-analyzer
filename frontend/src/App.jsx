@@ -32,6 +32,7 @@ export default function App() {
   const [fastestGrowingReels, setFastestGrowingReels] = useState([]);
   
   const [filterMode, setFilterMode] = useState('last_24h'); // Default to last 24 hours
+  const [selectedCountry, setSelectedCountry] = useState('all'); // 'all', 'India', 'Pakistan', 'Bangladesh', 'Nepal'
   const [sortBy, setSortBy] = useState('trending');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -80,13 +81,14 @@ export default function App() {
 
     const loadCategoryData = async () => {
       try {
-        const statsData = await fetchCategoryStats(selectedCategory.slug);
+        const statsData = await fetchCategoryStats(selectedCategory.slug, selectedCountry);
         setCategoryStats(statsData.stats);
 
         // Fetch top fastest growing reels for spotlight
         const fastestData = await fetchReels({
           category: selectedCategory.slug,
           filterMode: 'fastest_growing',
+          country: selectedCountry,
           limit: 3
         });
         setFastestGrowingReels(fastestData.items);
@@ -96,9 +98,9 @@ export default function App() {
     };
 
     loadCategoryData();
-  }, [selectedCategory]);
+  }, [selectedCategory, selectedCountry]);
 
-  // Fetch Reels list based on current filter, sort, search
+  // Fetch Reels list based on current filter, sort, search, country
   const loadReels = useCallback(async () => {
     if (!selectedCategory) return;
     try {
@@ -107,6 +109,7 @@ export default function App() {
         category: selectedCategory.slug,
         filterMode: filterMode,
         sortBy: sortBy,
+        country: selectedCountry,
         limit: filterMode === 'top_100' ? 100 : 50,
         search: searchTerm || null
       });
@@ -117,7 +120,7 @@ export default function App() {
     } finally {
       setLoadingReels(false);
     }
-  }, [selectedCategory, filterMode, sortBy, searchTerm]);
+  }, [selectedCategory, filterMode, sortBy, selectedCountry, searchTerm]);
 
   useEffect(() => {
     loadReels();
@@ -135,7 +138,7 @@ export default function App() {
       // Reload categories, stats and reels
       const [cats, statsData] = await Promise.all([
         fetchCategories(),
-        selectedCategory ? fetchCategoryStats(selectedCategory.slug) : Promise.resolve(null)
+        selectedCategory ? fetchCategoryStats(selectedCategory.slug, selectedCountry) : Promise.resolve(null)
       ]);
       setCategories(cats);
       if (statsData) setCategoryStats(statsData.stats);
@@ -195,10 +198,12 @@ export default function App() {
               onSelectReel={(reel) => setSelectedReel(reel)}
             />
 
-            {/* Filter Navigation Bar (Last 24 Hours, Fastest Growing, Top 100, All) */}
+            {/* Filter Navigation Bar (Last 24 Hours, Fastest Growing, Top 100, All & South Asian Countries) */}
             <FilterBar
               activeFilter={filterMode}
               onChangeFilter={(mode) => setFilterMode(mode)}
+              selectedCountry={selectedCountry}
+              onChangeCountry={(country) => setSelectedCountry(country)}
               sortBy={sortBy}
               onChangeSort={(sort) => setSortBy(sort)}
               searchTerm={searchTerm}
@@ -260,7 +265,7 @@ export default function App() {
           showToast('Data ingestion completed!');
           const [cats, statsData] = await Promise.all([
             fetchCategories(),
-            fetchCategoryStats(selectedCategory.slug)
+            fetchCategoryStats(selectedCategory.slug, selectedCountry)
           ]);
           setCategories(cats);
           setCategoryStats(statsData.stats);

@@ -303,7 +303,7 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
               </div>
 
               <p className="text-xs text-slate-300 leading-relaxed">
-                Run the Apify actor in the cloud to scrape latest Instagram reels for your categories:
+                Run the Apify actor in the cloud to scrape authentic Instagram reels for South Asia (India, Pakistan, Bangladesh, Nepal):
               </p>
 
               <div className="flex flex-col sm:flex-row gap-2.5">
@@ -313,11 +313,11 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
                   disabled={isScraping}
                   className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-400 font-medium"
                 >
-                  <option value="all">All 4 Categories (MKBHD, Verge, OpenAI, Humor, Crypto)</option>
-                  <option value="niche">Niche (techradar, theverge, mkbhd, cnet)</option>
-                  <option value="ai">AI (chatgpt, openai, midjourney.gallery)</option>
-                  <option value="other">Other (thecoderlife, programmer.humor, faares.q)</option>
-                  <option value="blockchain">Blockchain (ethereum, coinbase, binance)</option>
+                  <option value="all">All 4 Categories: Mixed South Asia (🇮🇳 🇵🇰 🇧🇩 🇳🇵)</option>
+                  <option value="niche">Niche / Gadgets (TechBurner, TechGuruji, VideoWaliSarkar, Sohag360, GadgetByte)</option>
+                  <option value="ai">AI Tools & Prompts (Beebom, Varun Mayya, Hisham Sarwar, Jhankar Mahbub, Fusemachines)</option>
+                  <option value="other">Other / Dev Humor (EZSnippet, Striver, Azad Chaiwala, Learn with Sumit, RONB)</option>
+                  <option value="blockchain">Blockchain & Web3 (Polygon MATIC, Waqar Zaka, Pushpendra Tech, Web3 Nepal)</option>
                 </select>
 
                 <button

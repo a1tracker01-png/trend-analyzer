@@ -13,6 +13,7 @@ class CreatorResponse(BaseModel):
     following_count: int = 0
     biography: Optional[str] = None
     profile_url: Optional[str] = None
+    country: Optional[str] = None
 
     class Config:
         from_attributes = True

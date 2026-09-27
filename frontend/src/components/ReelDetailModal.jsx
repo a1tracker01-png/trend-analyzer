@@ -52,6 +52,15 @@ export default function ReelDetailModal({ reel, onClose }) {
   const trending = reel.latest_trending || {};
   const engagement = getEngagementBadge(metrics.engagement_rate || 0);
 
+  const COUNTRY_FLAGS = {
+    'India': '🇮🇳',
+    'Pakistan': '🇵🇰',
+    'Bangladesh': '🇧🇩',
+    'Nepal': '🇳🇵',
+  };
+  const countryName = reel.country || creator.country || 'India';
+  const countryFlag = COUNTRY_FLAGS[countryName] || '🌏';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
       <div 
@@ -66,7 +75,9 @@ export default function ReelDetailModal({ reel, onClose }) {
             </div>
             <div>
               <h3 className="font-bold text-white text-base">Reel Analytics Breakdown</h3>
-              <p className="text-xs text-slate-400">ID: {reel.platform_media_id} • Category: {reel.category_name}</p>
+              <p className="text-xs text-slate-400">
+                ID: {reel.platform_media_id} • Category: {reel.category_name} • Region: {countryFlag} {countryName}
+              </p>
             </div>
           </div>
           <button
@@ -124,7 +135,13 @@ export default function ReelDetailModal({ reel, onClose }) {
                         <BadgeCheck className="w-4 h-4 text-blue-400" />
                       )}
                     </div>
-                    <span className="text-xs text-purple-400 font-medium">@{creator.username}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-purple-400 font-medium">@{creator.username}</span>
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-200 flex items-center gap-1">
+                        <span>{countryFlag}</span>
+                        <span>{countryName}</span>
+                      </span>
+                    </div>
                   </div>
                 </div>
 

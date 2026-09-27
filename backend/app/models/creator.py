@@ -16,6 +16,7 @@ class Creator(Base):
     following_count = Column(Integer, default=0)
     biography = Column(Text, nullable=True)
     profile_url = Column(Text, nullable=True)
+    country = Column(String(100), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 

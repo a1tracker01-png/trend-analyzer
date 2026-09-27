@@ -23,6 +23,7 @@ class ReelRawData(BaseModel):
     creator_following: int = 0
     creator_bio: Optional[str] = None
     creator_url: Optional[str] = None
+    country: Optional[str] = None
     
     # Metrics
     view_count: int = 0

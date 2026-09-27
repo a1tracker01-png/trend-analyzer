@@ -48,6 +48,15 @@ export default function FastestGrowingSpotlight({ reels, onSelectReel }) {
           const creator = reel.creator || {};
           const engagement = getEngagementBadge(metrics.engagement_rate || 0);
 
+          const COUNTRY_FLAGS = {
+            'India': '🇮🇳',
+            'Pakistan': '🇵🇰',
+            'Bangladesh': '🇧🇩',
+            'Nepal': '🇳🇵',
+          };
+          const countryName = reel.country || creator.country || 'India';
+          const countryFlag = COUNTRY_FLAGS[countryName] || '🌏';
+
           return (
             <div
               key={reel.id}
@@ -114,9 +123,12 @@ export default function FastestGrowingSpotlight({ reels, onSelectReel }) {
                         {creator.is_verified && (
                           <BadgeCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                         )}
+                        <span className="text-xs shrink-0" title={`Region: ${countryName}`}>
+                          {countryFlag}
+                        </span>
                       </div>
                       <span className="text-[11px] text-slate-400">
-                        {formatNumber(creator.followers_count)} followers
+                        {formatNumber(creator.followers_count)} followers • {countryName}
                       </span>
                     </div>
                   </div>

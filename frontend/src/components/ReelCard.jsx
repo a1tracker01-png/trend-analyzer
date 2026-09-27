@@ -28,6 +28,15 @@ export default function ReelCard({ reel, rank, onSelect }) {
     3: 'bg-gradient-to-r from-amber-600 to-amber-700 text-white font-black shadow-amber-700/30',
   };
 
+  const COUNTRY_FLAGS = {
+    'India': '🇮🇳',
+    'Pakistan': '🇵🇰',
+    'Bangladesh': '🇧🇩',
+    'Nepal': '🇳🇵',
+  };
+  const countryName = reel.country || creator.country || 'India';
+  const countryFlag = COUNTRY_FLAGS[countryName] || '🌏';
+
   return (
     <div 
       onClick={() => onSelect(reel)}
@@ -47,11 +56,17 @@ export default function ReelCard({ reel, rank, onSelect }) {
 
         {/* Top Badges: Rank & Velocity */}
         <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-          {/* Rank Badge */}
-          <div className={`px-2.5 py-0.5 rounded-full text-xs shadow-md ${
-            isPodium ? podiumStyles[rank] : 'bg-slate-900/90 text-slate-200 border border-slate-700 font-bold'
-          }`}>
-            #{rank}
+          {/* Rank & Country Badge */}
+          <div className="flex items-center gap-1.5">
+            <div className={`px-2.5 py-0.5 rounded-full text-xs shadow-md ${
+              isPodium ? podiumStyles[rank] : 'bg-slate-900/90 text-slate-200 border border-slate-700 font-bold'
+            }`}>
+              #{rank}
+            </div>
+            <div className="px-2 py-0.5 rounded-full bg-slate-900/90 text-slate-200 border border-slate-700/80 text-[11px] font-bold shadow-md flex items-center gap-1 backdrop-blur-sm">
+              <span>{countryFlag}</span>
+              <span className="text-[10px] text-slate-300 hidden sm:inline">{countryName}</span>
+            </div>
           </div>
 
           {/* Growth Velocity Surge Pill */}
@@ -109,9 +124,12 @@ export default function ReelCard({ reel, rank, onSelect }) {
                   {creator.is_verified && (
                     <BadgeCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                   )}
+                  <span className="text-[11px] shrink-0" title={`Region: ${countryName}`}>
+                    {countryFlag}
+                  </span>
                 </div>
                 <span className="text-[10px] text-slate-400 block truncate">
-                  {formatNumber(creator.followers_count)} followers
+                  {formatNumber(creator.followers_count)} followers • {countryName}
                 </span>
               </div>
             </div>

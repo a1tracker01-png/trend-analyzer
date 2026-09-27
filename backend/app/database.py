@@ -54,7 +54,9 @@ def upgrade_schema_types(target_engine):
         "ALTER TABLE creators ALTER COLUMN profile_url TYPE TEXT",
         "ALTER TABLE creators ALTER COLUMN full_name TYPE TEXT",
         "ALTER TABLE data_sources ALTER COLUMN status_message TYPE TEXT",
-        "ALTER TABLE data_sources ALTER COLUMN api_endpoint TYPE TEXT"
+        "ALTER TABLE data_sources ALTER COLUMN api_endpoint TYPE TEXT",
+        "ALTER TABLE creators ADD COLUMN IF NOT EXISTS country VARCHAR(100)",
+        "ALTER TABLE reels ADD COLUMN IF NOT EXISTS country VARCHAR(100)"
     ]
     with target_engine.connect() as conn:
         for q in migrations:

@@ -38,6 +38,7 @@ class ReelResponse(BaseModel):
     posted_at: datetime
     category_id: int
     category_name: Optional[str] = None
+    country: Optional[str] = None
     creator: Optional[CreatorResponse] = None
     latest_metrics: Optional[ReelMetricsResponse] = None
     latest_trending: Optional[TrendingScoreResponse] = None
