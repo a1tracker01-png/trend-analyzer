@@ -128,16 +128,17 @@ export default function App() {
     if (!activeDataSource) return;
     try {
       setIsSyncing(true);
-      await triggerSync(activeDataSource.id, selectedCategory?.slug);
-      showToast(`Synchronized fresh reels for ${selectedCategory?.name}!`);
+      const savedToken = localStorage.getItem('reels_apify_token') || undefined;
+      await triggerSync(activeDataSource.id, null, savedToken);
+      showToast(`Synchronized real Instagram reels successfully!`);
       
-      // Reload stats and reels
+      // Reload categories, stats and reels
       const [cats, statsData] = await Promise.all([
         fetchCategories(),
-        fetchCategoryStats(selectedCategory.slug)
+        selectedCategory ? fetchCategoryStats(selectedCategory.slug) : Promise.resolve(null)
       ]);
       setCategories(cats);
-      setCategoryStats(statsData.stats);
+      if (statsData) setCategoryStats(statsData.stats);
       await loadReels();
     } catch (err) {
       alert('Sync failed: ' + err.message);

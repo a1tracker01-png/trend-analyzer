@@ -169,36 +169,14 @@ class DataSourceService:
 
         db.flush()
 
-        # 5. Determine Categories with automatic balancing so no category is empty
+        # 5. Determine Categories strictly by reel content & creator
         category_assignments = []
         for idx, item in enumerate(raw_reels):
-            if category_slug and category_slug.lower() in cat_map_by_slug:
-                target_cat = cat_map_by_slug[category_slug.lower()]
-            else:
-                classified_name = classify_reel_category(item.caption)
-                target_cat = cat_map_by_name.get(classified_name.lower())
-                if not target_cat:
-                    target_cat = all_categories[idx % len(all_categories)]
+            classified_name = classify_reel_category(item.caption, item.creator_username)
+            target_cat = cat_map_by_name.get(classified_name.lower())
+            if not target_cat:
+                target_cat = cat_map_by_slug.get("niche") or all_categories[0]
             category_assignments.append(target_cat)
-
-        # Balance check: ensure all active categories have reels
-        cat_counts = {c.id: 0 for c in all_categories}
-        for c in category_assignments:
-            cat_counts[c.id] += 1
-
-        empty_cats = [c for c in all_categories if cat_counts[c.id] == 0]
-        if empty_cats and len(raw_reels) >= len(all_categories):
-            # Distribute surplus from the largest categories to fill empty ones
-            for empty_cat in empty_cats:
-                # Find an index from the most populated category
-                max_cat_id = max(cat_counts, key=cat_counts.get)
-                if cat_counts[max_cat_id] > 3:
-                    for i, assigned_cat in enumerate(category_assignments):
-                        if assigned_cat.id == max_cat_id:
-                            category_assignments[i] = empty_cat
-                            cat_counts[max_cat_id] -= 1
-                            cat_counts[empty_cat.id] += 1
-                            break
 
         # 6. Upsert Reels & Precompute Metrics (Batch 2)
         ingested_count = 0
@@ -305,6 +283,27 @@ class DataSourceService:
             "ingested": ingested_count,
             "updated": updated_count
         }
+
+    @staticmethod
+    def scrape_fresh(
+        db: Session,
+        data_source: DataSource,
+        category_slug: Optional[str] = None,
+        limit: int = 15
+    ) -> Dict[str, Any]:
+        """
+        Triggers a fresh cloud scraping run on Apify for real Instagram accounts.
+        """
+        config = json.loads(data_source.config_json) if data_source.config_json else {}
+        provider = DataSourceService.get_provider(data_source.provider_type, config)
+        if not hasattr(provider, "trigger_fresh_scrape"):
+            raise ValueError(f"Provider {data_source.provider_type} does not support fresh scraping.")
+
+        result = provider.trigger_fresh_scrape(category_name=category_slug, limit=limit)
+        run_id = result.get("run_id", "active")
+        data_source.status_message = f"Apify cloud scraper active (Run: {run_id}). Ingesting soon."
+        db.commit()
+        return result
 
     @staticmethod
     def sync_category(

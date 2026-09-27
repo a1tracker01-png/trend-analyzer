@@ -146,6 +146,56 @@ def trigger_data_source_sync(
             detail=str(e)
         )
 
+@router.post("/{source_id}/scrape-fresh")
+def trigger_fresh_scrape(
+    source_id: int,
+    payload: Optional[SyncRequest] = None,
+    category_slug: Optional[str] = Query(None, description="Optional category to scrape specifically"),
+    limit: int = Query(15, description="Max reels per account"),
+    db: Session = Depends(get_db)
+):
+    """
+    Triggers a fresh scraping run in the user's Apify cloud for Instagram targets.
+    """
+    source = db.query(DataSource).filter(DataSource.id == source_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Data source not found")
+
+    if payload and payload.api_token and payload.api_token.strip():
+        current_config = json.loads(source.config_json) if source.config_json else {}
+        current_config["api_token"] = payload.api_token.strip()
+        source.config_json = json.dumps(current_config)
+        db.query(DataSource).update({DataSource.is_active: False})
+        source.is_active = True
+        db.commit()
+        db.refresh(source)
+
+    target_category = category_slug
+    if payload and payload.category_slug:
+        target_category = payload.category_slug
+
+    try:
+        result = DataSourceService.scrape_fresh(
+            db=db,
+            data_source=source,
+            category_slug=target_category,
+            limit=limit
+        )
+        return {
+            "status": "started",
+            "data_source": source.name,
+            "run_id": result.get("run_id"),
+            "dataset_id": result.get("dataset_id"),
+            "message": result.get("message", "Fresh scrape initiated"),
+            "target_usernames": result.get("target_usernames", [])
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
 @router.post("/purge-mock-data")
 def purge_mock_data(db: Session = Depends(get_db)):
     """Removes all synthetic / fake sample reels from the database."""

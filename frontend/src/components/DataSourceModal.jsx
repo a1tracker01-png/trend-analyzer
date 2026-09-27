@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   Database, 
@@ -8,7 +8,10 @@ import {
   ExternalLink, 
   Zap, 
   AlertCircle,
-  ShieldCheck
+  ShieldCheck,
+  Play,
+  Clock,
+  Sparkles
 } from 'lucide-react';
 import { 
   fetchDataSources, 
@@ -16,6 +19,7 @@ import {
   activateDataSource, 
   updateDataSourceConfig, 
   triggerSync,
+  triggerFreshScrape,
   purgeMockData
 } from '../api';
 
@@ -25,9 +29,20 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState('');
-  const [apifyToken, setApifyToken] = useState('');
+  
+  // Persistent token: reads from localStorage, updated from backend config
+  const [apifyToken, setApifyToken] = useState(() => {
+    return localStorage.getItem('reels_apify_token') || '';
+  });
+  
   const [savingApify, setSavingApify] = useState(false);
   const [purging, setPurging] = useState(false);
+
+  // Fresh scrape state
+  const [scrapeCategory, setScrapeCategory] = useState('all');
+  const [isScraping, setIsScraping] = useState(false);
+  const [scrapeCountdown, setScrapeCountdown] = useState(0);
+  const countdownIntervalRef = useRef(null);
 
   const loadData = async () => {
     try {
@@ -43,7 +58,19 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
       if (apifySource?.config_json) {
         try {
           const cfg = JSON.parse(apifySource.config_json);
-          if (cfg.api_token) setApifyToken(cfg.api_token);
+          if (cfg.api_token) {
+            setApifyToken(cfg.api_token);
+            localStorage.setItem('reels_apify_token', cfg.api_token);
+          } else {
+            const currentToken = localStorage.getItem('reels_apify_token') || '';
+            if (currentToken) {
+              setApifyToken(currentToken);
+              updateDataSourceConfig(apifySource.id, {
+                api_token: currentToken,
+                is_active: true
+              }).catch(() => {});
+            }
+          }
         } catch (e) {}
       }
     } catch (err) {
@@ -57,19 +84,34 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
     if (isOpen) {
       loadData();
     }
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+    };
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  const handleTokenChange = (e) => {
+    const val = e.target.value;
+    setApifyToken(val);
+    localStorage.setItem('reels_apify_token', val);
+  };
 
   const handleSaveApify = async (apifySourceId) => {
+    const tokenToSave = apifyToken.trim();
+    if (!tokenToSave) {
+      alert('Please enter your Apify API Token first.');
+      return;
+    }
     try {
       setSavingApify(true);
+      localStorage.setItem('reels_apify_token', tokenToSave);
       await updateDataSourceConfig(apifySourceId, {
-        api_token: apifyToken.trim(),
+        api_token: tokenToSave,
         is_active: true
       });
       await activateDataSource(apifySourceId);
-      alert('Apify API Token saved and set as active provider!');
+      alert('Apify API Token saved permanently in your browser & database!');
       await loadData();
     } catch (err) {
       alert('Failed to save Apify token: ' + err.message);
@@ -79,27 +121,25 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
   };
 
   const handleTriggerSync = async (sourceId) => {
-    if (!apifyToken.trim()) {
-      alert('Please enter your Apify API Token first.');
-      return;
-    }
-
+    const token = apifyToken.trim() || localStorage.getItem('reels_apify_token') || '';
     try {
       setSyncing(true);
       setSyncSuccessMsg('');
 
-      // Auto-save the token and activate Apify first
-      await updateDataSourceConfig(sourceId, {
-        api_token: apifyToken.trim(),
-        is_active: true
-      });
-      await activateDataSource(sourceId);
+      if (token) {
+        localStorage.setItem('reels_apify_token', token);
+        await updateDataSourceConfig(sourceId, {
+          api_token: token,
+          is_active: true
+        });
+        await activateDataSource(sourceId);
+      }
 
-      // Trigger sync with token passed
-      const res = await triggerSync(sourceId, null, apifyToken.trim());
+      // Trigger sync with token passed (null category so all categories are synced)
+      const res = await triggerSync(sourceId, null, token || undefined);
       
       const count = res.reels_count ?? (res.details?.reels_count ?? 0);
-      setSyncSuccessMsg(res.message || `Successfully ingested real reels! Fake seed data purged.`);
+      setSyncSuccessMsg(res.message || `Successfully ingested ${count} real Instagram reels into Neon!`);
 
       await loadData();
       if (onSyncComplete) onSyncComplete();
@@ -107,6 +147,43 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
       alert('Sync Notice: ' + err.message);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleTriggerFreshScrape = async (sourceId) => {
+    const token = apifyToken.trim() || localStorage.getItem('reels_apify_token') || '';
+    if (!token) {
+      alert('Please enter your Apify API Token in the field above before scraping.');
+      return;
+    }
+    try {
+      setIsScraping(true);
+      setSyncSuccessMsg('');
+      localStorage.setItem('reels_apify_token', token);
+
+      // Trigger scrape on Apify actor
+      await triggerFreshScrape(sourceId, scrapeCategory, token, 15);
+      
+      // Start 32-second countdown (Apify actor run takes ~30s)
+      setScrapeCountdown(32);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+
+      countdownIntervalRef.current = setInterval(() => {
+        setScrapeCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(countdownIntervalRef.current);
+            setIsScraping(false);
+            // Automatically ingest freshly scraped reels!
+            handleTriggerSync(sourceId);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+    } catch (err) {
+      setIsScraping(false);
+      alert('Scraper Error: ' + err.message);
     }
   };
 
@@ -159,72 +236,122 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
           
           {/* Apify Real Data Card */}
           {apifySource && (
-            <div className="p-5 rounded-2xl bg-gradient-to-b from-purple-950/40 to-slate-950 border-2 border-purple-500/50 shadow-xl space-y-4">
+            <div className="p-5 rounded-2xl bg-gradient-to-b from-purple-950/40 to-slate-950 border-2 border-purple-500/50 shadow-xl space-y-5">
+              
+              {/* Header inside card */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="font-extrabold text-white text-base">Apify Cloud Ingestion</span>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    FREE $5/mo Credit Included
+                    Saved & Connected
                   </span>
                 </div>
 
                 <a
-                  href="https://console.apify.com/account/integrations"
+                  href="https://console.apify.com/actors/xMc5Ga1oCONPmWJIa/runs"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1 text-xs text-purple-300 hover:text-purple-200 font-semibold underline"
                 >
-                  <span>Get Apify Token</span>
+                  <span>View Runs in Apify Console</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
 
-              <p className="text-xs text-slate-300">
-                Paste your Apify Personal API token below. Tap <strong>Sync Real Reels Now</strong> to immediately fetch real reels from your Apify account into your Neon database and purge all fake seed data!
-              </p>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-300">
-                  Apify Personal API Token:
-                </label>
+              {/* 1. API Token Section */}
+              <div className="space-y-1.5 p-3 rounded-xl bg-slate-900/60 border border-purple-900/40">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300">
+                    Apify API Token <span className="text-purple-400">(Saved Permanently in Browser & DB)</span>:
+                  </label>
+                  <span className="text-[10px] text-emerald-400 font-medium">Never needs re-entering</span>
+                </div>
                 <div className="flex gap-2">
                   <input
                     type="password"
                     placeholder="apify_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                     value={apifyToken}
-                    onChange={(e) => setApifyToken(e.target.value)}
+                    onChange={handleTokenChange}
                     className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 font-mono"
                   />
                   <button
                     onClick={() => handleSaveApify(apifySource.id)}
                     disabled={savingApify || !apifyToken.trim()}
-                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition disabled:opacity-50 shrink-0"
+                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-semibold text-white transition disabled:opacity-50 shrink-0"
                   >
                     {savingApify ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               </div>
 
-              {/* Status and Action Buttons */}
-              <div className="pt-3 border-t border-purple-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              {/* 2. Refetch / Trigger Fresh Scrape from Instagram */}
+              <div className="p-4 rounded-xl bg-indigo-950/30 border border-indigo-500/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-400" />
+                    <span className="font-bold text-white text-xs">Trigger Fresh Instagram Scrape</span>
+                  </div>
+                  <span className="text-[10px] text-indigo-300 font-mono">Apify Cloud Actor</span>
+                </div>
+
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Tell Apify to fetch latest reels directly from Instagram for your categories:
+                </p>
+
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <select
+                    value={scrapeCategory}
+                    onChange={(e) => setScrapeCategory(e.target.value)}
+                    disabled={isScraping}
+                    className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-400 font-medium"
+                  >
+                    <option value="all">All 4 Categories (MKBHD, Verge, OpenAI, Humor, Crypto)</option>
+                    <option value="niche">Niche (techradar, theverge, mkbhd, cnet)</option>
+                    <option value="ai">AI (chatgpt, openai, midjourney.gallery)</option>
+                    <option value="other">Other (thecoderlife, programmer.humor, faares.q)</option>
+                    <option value="blockchain">Blockchain (ethereum, coinbase, binance)</option>
+                  </select>
+
+                  <button
+                    onClick={() => handleTriggerFreshScrape(apifySource.id)}
+                    disabled={isScraping || !apifyToken.trim()}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white transition disabled:opacity-50 shadow-md shadow-indigo-600/30"
+                  >
+                    <Play className={`w-3.5 h-3.5 ${isScraping ? 'animate-spin' : ''}`} />
+                    <span>{isScraping ? `Scraping Instagram (${scrapeCountdown}s)...` : 'Scrape Fresh from Instagram'}</span>
+                  </button>
+                </div>
+
+                {isScraping && (
+                  <div className="p-2.5 rounded-lg bg-indigo-900/40 border border-indigo-400/40 flex items-center justify-between text-xs text-indigo-200">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-3.5 h-3.5 animate-pulse text-indigo-300" />
+                      <span>Apify actor scraping Instagram in cloud...</span>
+                    </div>
+                    <span className="font-bold font-mono text-indigo-300">Auto-syncing in {scrapeCountdown}s</span>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Sync Existing Cloud Reels into Neon */}
+              <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="text-xs">
-                  <span className="text-slate-400 block text-[11px]">Sync Status:</span>
+                  <span className="text-slate-400 block text-[11px]">Database Status:</span>
                   <span className="font-semibold text-purple-300 text-xs">
                     {apifySource.status_message || 'Ready to sync'}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleTriggerSync(apifySource.id)}
-                    disabled={syncing || !apifyToken.trim()}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-xs font-extrabold text-white shadow-lg shadow-purple-600/30 transition disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-                    <span>{syncing ? 'Ingesting Real Reels...' : 'Sync Real Reels Now'}</span>
-                  </button>
-                </div>
+                <button
+                  onClick={() => handleTriggerSync(apifySource.id)}
+                  disabled={syncing || isScraping || !apifyToken.trim()}
+                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-xs font-extrabold text-white shadow-lg shadow-purple-600/30 transition disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                  <span>{syncing ? 'Ingesting Real Reels...' : 'Sync Real Reels to Database'}</span>
+                </button>
               </div>
+
             </div>
           )}
 

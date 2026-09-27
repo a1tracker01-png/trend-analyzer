@@ -127,3 +127,44 @@ export async function purgeMockData() {
   }
   return res.json();
 }
+
+export async function triggerFreshScrape(sourceId, categorySlug = null, apiToken = null, limit = 15) {
+  const params = new URLSearchParams({ limit: limit.toString() });
+  if (categorySlug && categorySlug !== 'all') {
+    params.append('category_slug', categorySlug);
+  }
+  const url = `${API_BASE}/data-sources/${sourceId}/scrape-fresh?${params.toString()}`;
+
+  const headers = {};
+  let body = undefined;
+  if (apiToken || categorySlug) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify({
+      api_token: apiToken ? apiToken.trim() : undefined,
+      category_slug: categorySlug && categorySlug !== 'all' ? categorySlug : undefined,
+    });
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body,
+  });
+
+  if (!res.ok) {
+    let errMsg = 'Failed to trigger fresh Instagram scrape';
+    try {
+      const data = await res.json();
+      errMsg = data.detail || data.message || JSON.stringify(data);
+    } catch (_) {
+      try {
+        const text = await res.text();
+        if (text) errMsg = text;
+      } catch (__) {}
+    }
+    throw new Error(errMsg);
+  }
+
+  return res.json();
+}
+
