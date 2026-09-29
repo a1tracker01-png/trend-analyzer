@@ -27,9 +27,8 @@ const SORT_OPTIONS = [
 ];
 
 const REGION_TABS = [
-  { id: 'all', label: 'All Regions', flag: '🌏', code: 'IN • PK • BD • NP' },
+  { id: 'all', label: 'All Regions', flag: '🌏', code: 'IN • BD • NP' },
   { id: 'India', label: 'India', flag: '🇮🇳' },
-  { id: 'Pakistan', label: 'Pakistan', flag: '🇵🇰' },
   { id: 'Bangladesh', label: 'Bangladesh', flag: '🇧🇩' },
   { id: 'Nepal', label: 'Nepal', flag: '🇳🇵' },
 ];

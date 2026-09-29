@@ -30,11 +30,11 @@ export default function ReelCard({ reel, rank, onSelect }) {
 
   const COUNTRY_FLAGS = {
     'India': '🇮🇳',
-    'Pakistan': '🇵🇰',
     'Bangladesh': '🇧🇩',
     'Nepal': '🇳🇵',
   };
-  const countryName = reel.country || creator.country || 'India';
+  const rawCountry = reel.country || creator.country || 'India';
+  const countryName = rawCountry === 'Pakistan' ? 'India' : rawCountry;
   const countryFlag = COUNTRY_FLAGS[countryName] || '🌏';
 
   return (

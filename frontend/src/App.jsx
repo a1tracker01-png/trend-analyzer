@@ -32,7 +32,7 @@ export default function App() {
   const [fastestGrowingReels, setFastestGrowingReels] = useState([]);
   
   const [filterMode, setFilterMode] = useState('last_24h'); // Default to last 24 hours
-  const [selectedCountry, setSelectedCountry] = useState('all'); // 'all', 'India', 'Pakistan', 'Bangladesh', 'Nepal'
+  const [selectedCountry, setSelectedCountry] = useState('all'); // 'all', 'India', 'Bangladesh', 'Nepal'
   const [sortBy, setSortBy] = useState('trending');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -89,9 +89,12 @@ export default function App() {
           category: selectedCategory.slug,
           filterMode: 'fastest_growing',
           country: selectedCountry,
-          limit: 3
+          limit: 10
         });
-        setFastestGrowingReels(fastestData.items);
+        const sanitizedFastest = (fastestData.items || []).filter(
+          (r) => r.country !== 'Pakistan' && r.creator?.country !== 'Pakistan'
+        );
+        setFastestGrowingReels(sanitizedFastest.slice(0, 3));
       } catch (err) {
         console.error('Failed to load category data:', err);
       }
@@ -113,8 +116,11 @@ export default function App() {
         limit: filterMode === 'top_100' ? 100 : 50,
         search: searchTerm || null
       });
-      setReels(data.items);
-      setTotalCount(data.total_count);
+      const sanitizedReels = (data.items || []).filter(
+        (r) => r.country !== 'Pakistan' && r.creator?.country !== 'Pakistan'
+      );
+      setReels(sanitizedReels);
+      setTotalCount(sanitizedReels.length);
     } catch (err) {
       console.error('Failed to load reels:', err);
     } finally {

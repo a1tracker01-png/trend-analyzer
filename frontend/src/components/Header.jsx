@@ -47,11 +47,11 @@ export default function Header({
                 </span>
                 <span className="text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-1">
                   <span>South Asia</span>
-                  <span>🇮🇳 🇵🇰 🇧🇩 🇳🇵</span>
+                  <span>🇮🇳 🇧🇩 🇳🇵</span>
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden lg:block">
-                India • Pakistan • Nepal Velocity Engine
+                India • Bangladesh • Nepal Velocity Engine
               </p>
             </div>
           </div>
