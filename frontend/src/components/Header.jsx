@@ -51,7 +51,7 @@ export default function Header({
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden lg:block">
-                India • Pakistan • Bangladesh • Nepal Velocity Engine
+                India • Pakistan • Nepal Velocity Engine
               </p>
             </div>
           </div>
