@@ -152,17 +152,15 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
 
   const handleTriggerFreshScrape = async (sourceId) => {
     const token = apifyToken.trim() || localStorage.getItem('reels_apify_token') || '';
-    if (!token) {
-      alert('Please enter your Apify API Token in the field above before scraping.');
-      return;
-    }
     try {
       setIsScraping(true);
       setSyncSuccessMsg('');
-      localStorage.setItem('reels_apify_token', token);
+      if (token) {
+        localStorage.setItem('reels_apify_token', token);
+      }
 
-      // Trigger scrape on Apify actor
-      await triggerFreshScrape(sourceId, scrapeCategory, token, 15);
+      // Trigger scrape on Apify actor - uses token if present in browser, or defaults to backend APIFY_API_TOKEN environment variable
+      await triggerFreshScrape(sourceId, scrapeCategory, token || undefined, 15);
       
       // Start 32-second countdown (Apify actor run takes ~30s)
       setScrapeCountdown(32);
@@ -279,17 +277,39 @@ export default function DataSourceModal({ isOpen, onClose, onSyncComplete }) {
               </a>
             </div>
 
-            {/* Connection Status Badge */}
-            <div className="p-3 rounded-xl bg-purple-950/40 border border-purple-800/40 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-xs font-semibold text-slate-200">
-                  Apify Token Active (Environment Variable & DB)
+            {/* Connection Status Badge & Optional Token Override */}
+            <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-800/40 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-xs font-semibold text-slate-200">
+                    Apify Token Active (Environment Variable & DB)
+                  </span>
+                </div>
+                <span className="text-[11px] text-purple-300 font-medium">
+                  {apifySource.status_message || 'Ready to sync'}
                 </span>
               </div>
-              <span className="text-[11px] text-purple-300 font-medium">
-                {apifySource.status_message || 'Ready to sync'}
-              </span>
+
+              {/* Optional Token override input */}
+              <div className="flex items-center gap-2 pt-1 border-t border-purple-900/30">
+                <input
+                  type="password"
+                  placeholder="Optional: Enter custom Apify API token (apify_api_...)"
+                  value={apifyToken}
+                  onChange={handleTokenChange}
+                  className="flex-1 bg-slate-900/90 border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-purple-400 font-mono"
+                />
+                {apifyToken.trim() && (
+                  <button
+                    onClick={() => handleSaveApify(apifySource.id)}
+                    disabled={savingApify}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-xs font-semibold text-white transition disabled:opacity-50 shrink-0 shadow-sm"
+                  >
+                    {savingApify ? 'Saving...' : 'Save Token'}
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* 1. Refetch / Trigger Fresh Scrape from Instagram */}
