@@ -56,7 +56,25 @@ def upgrade_schema_types(target_engine):
         "ALTER TABLE data_sources ALTER COLUMN status_message TYPE TEXT",
         "ALTER TABLE data_sources ALTER COLUMN api_endpoint TYPE TEXT",
         "ALTER TABLE creators ADD COLUMN IF NOT EXISTS country VARCHAR(100)",
-        "ALTER TABLE reels ADD COLUMN IF NOT EXISTS country VARCHAR(100)"
+        "ALTER TABLE reels ADD COLUMN IF NOT EXISTS country VARCHAR(100)",
+        """CREATE TABLE IF NOT EXISTS competitors (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(100) UNIQUE NOT NULL,
+            name VARCHAR(200),
+            avatar_url TEXT,
+            bio TEXT,
+            followers_count INTEGER DEFAULT 0,
+            category VARCHAR(100) DEFAULT 'Tech',
+            country VARCHAR(100) DEFAULT 'India',
+            custom_view_threshold INTEGER DEFAULT 500000,
+            is_active BOOLEAN DEFAULT TRUE,
+            last_scraped_at TIMESTAMPTZ,
+            creator_id INTEGER REFERENCES creators(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_competitors_username ON competitors (username)",
+        "CREATE INDEX IF NOT EXISTS ix_competitors_creator_id ON competitors (creator_id)"
     ]
     with target_engine.connect() as conn:
         for q in migrations:

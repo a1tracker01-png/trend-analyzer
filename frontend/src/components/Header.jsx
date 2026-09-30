@@ -9,7 +9,10 @@ import {
   RefreshCw, 
   ShieldCheck, 
   Flame, 
-  Laptop 
+  Laptop,
+  Target,
+  Radio,
+  LayoutDashboard
 } from 'lucide-react';
 
 const CATEGORY_ICONS = {
@@ -27,6 +30,8 @@ export default function Header({
   onOpenDataSources,
   onSyncCurrent,
   isSyncing,
+  appView = 'dashboard',
+  onChangeView,
 }) {
   return (
     <header className="sticky top-0 z-40 bg-[#0B0F19]/90 backdrop-blur-md border-b border-slate-800/80">
@@ -56,36 +61,75 @@ export default function Header({
             </div>
           </div>
 
-          {/* Center Category Switcher */}
-          <div className="flex items-center bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800/90 shadow-inner overflow-x-auto max-w-[60vw] md:max-w-none">
-            {categories.map((cat) => {
-              const Icon = CATEGORY_ICONS[cat.slug] || Layers;
-              const isSelected = selectedCategory?.slug === cat.slug;
-              
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => onSelectCategory(cat)}
-                  className={`relative flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap ${
-                    isSelected
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/30 font-semibold'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-slate-400'}`} />
-                  <span>{cat.name}</span>
-                  <span
-                    className={`ml-1 text-[11px] px-1.5 py-0.2 rounded-md ${
-                      isSelected
-                        ? 'bg-white/20 text-white'
-                        : 'bg-slate-800 text-slate-400'
-                    }`}
-                  >
-                    {cat.total_reels}
+          {/* Center: App View Switcher + Category Switcher */}
+          <div className="flex items-center gap-2">
+            {/* Dashboard / Competitor Tracker Toggle */}
+            <div className="flex items-center bg-slate-900/90 p-1 rounded-xl border border-slate-800/90 shadow-inner mr-1">
+              <button
+                onClick={() => onChangeView?.('dashboard')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 whitespace-nowrap ${
+                  appView === 'dashboard'
+                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/30'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Main Reels Dashboard"
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </button>
+              <button
+                onClick={() => onChangeView?.('competitors')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 whitespace-nowrap ${
+                  appView === 'competitors'
+                    ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-md shadow-orange-600/30'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Competitor Tracker & Analytics"
+              >
+                <Target className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Competitors</span>
+                {appView === 'competitors' && (
+                  <span className="flex h-1.5 w-1.5 ml-0.5">
+                    <span className="animate-ping absolute inline-flex h-1.5 w-1.5 rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
                   </span>
-                </button>
-              );
-            })}
+                )}
+              </button>
+            </div>
+
+            {/* Category Switcher — only shown on dashboard */}
+            {appView === 'dashboard' && (
+              <div className="flex items-center bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800/90 shadow-inner overflow-x-auto max-w-[45vw] md:max-w-none">
+                {categories.map((cat) => {
+                  const Icon = CATEGORY_ICONS[cat.slug] || Layers;
+                  const isSelected = selectedCategory?.slug === cat.slug;
+                  
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => onSelectCategory(cat)}
+                      className={`relative flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+                        isSelected
+                          ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/30 font-semibold'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-slate-400'}`} />
+                      <span>{cat.name}</span>
+                      <span
+                        className={`ml-1 text-[11px] px-1.5 py-0.2 rounded-md ${
+                          isSelected
+                            ? 'bg-white/20 text-white'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {cat.total_reels}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Right Action Tools: Data Source & Sync */}

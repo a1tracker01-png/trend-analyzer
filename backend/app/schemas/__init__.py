@@ -2,6 +2,14 @@ from backend.app.schemas.category import CategoryResponse
 from backend.app.schemas.creator import CreatorResponse
 from backend.app.schemas.reel import ReelResponse, ReelMetricsResponse, TrendingScoreResponse, ReelListResponse
 from backend.app.schemas.data_source import DataSourceResponse, DataSourceUpdate, DataSourceHealthResponse
+from backend.app.schemas.competitor import (
+    CompetitorCreate,
+    CompetitorUpdate,
+    CompetitorResponse,
+    CompetitorReelItem,
+    SpikeAlertItem,
+    CompetitorStatsOverview,
+)
 
 __all__ = [
     "CategoryResponse",
@@ -12,5 +20,11 @@ __all__ = [
     "ReelListResponse",
     "DataSourceResponse",
     "DataSourceUpdate",
-    "DataSourceHealthResponse"
+    "DataSourceHealthResponse",
+    "CompetitorCreate",
+    "CompetitorUpdate",
+    "CompetitorResponse",
+    "CompetitorReelItem",
+    "SpikeAlertItem",
+    "CompetitorStatsOverview",
 ]

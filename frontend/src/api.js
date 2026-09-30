@@ -85,7 +85,7 @@ export async function updateDataSourceConfig(sourceId, payload) {
 }
 
 export async function triggerSync(sourceId, categorySlug = null, apiToken = null) {
-  const url = categorySlug 
+  const url = categorySlug
     ? `${API_BASE}/data-sources/${sourceId}/sync?category_slug=${encodeURIComponent(categorySlug)}`
     : `${API_BASE}/data-sources/${sourceId}/sync`;
 
@@ -99,33 +99,17 @@ export async function triggerSync(sourceId, categorySlug = null, apiToken = null
     });
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body,
-  });
-
+  const res = await fetch(url, { method: 'POST', headers, body });
   if (!res.ok) {
     let errMsg = 'Failed to trigger data sync';
-    try {
-      const data = await res.json();
-      errMsg = data.detail || data.message || JSON.stringify(data);
-    } catch (_) {
-      try {
-        const text = await res.text();
-        if (text) errMsg = text;
-      } catch (__) {}
-    }
+    try { const data = await res.json(); errMsg = data.detail || data.message || JSON.stringify(data); } catch (_) {}
     throw new Error(errMsg);
   }
-
   return res.json();
 }
 
 export async function purgeMockData() {
-  const res = await fetch(`${API_BASE}/data-sources/purge-mock-data`, {
-    method: 'POST',
-  });
+  const res = await fetch(`${API_BASE}/data-sources/purge-mock-data`, { method: 'POST' });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.detail || data.message || 'Failed to purge mock data');
@@ -134,9 +118,7 @@ export async function purgeMockData() {
 }
 
 export async function purgeGlobalData() {
-  const res = await fetch(`${API_BASE}/data-sources/purge-global-data`, {
-    method: 'POST',
-  });
+  const res = await fetch(`${API_BASE}/data-sources/purge-global-data`, { method: 'POST' });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.detail || data.message || 'Failed to purge global data');
@@ -146,9 +128,7 @@ export async function purgeGlobalData() {
 
 export async function triggerFreshScrape(sourceId, categorySlug = null, apiToken = null, limit = 15) {
   const params = new URLSearchParams({ limit: limit.toString() });
-  if (categorySlug && categorySlug !== 'all') {
-    params.append('category_slug', categorySlug);
-  }
+  if (categorySlug && categorySlug !== 'all') params.append('category_slug', categorySlug);
   const url = `${API_BASE}/data-sources/${sourceId}/scrape-fresh?${params.toString()}`;
 
   const headers = {};
@@ -161,26 +141,98 @@ export async function triggerFreshScrape(sourceId, categorySlug = null, apiToken
     });
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body,
-  });
-
+  const res = await fetch(url, { method: 'POST', headers, body });
   if (!res.ok) {
     let errMsg = 'Failed to trigger fresh Instagram scrape';
-    try {
-      const data = await res.json();
-      errMsg = data.detail || data.message || JSON.stringify(data);
-    } catch (_) {
-      try {
-        const text = await res.text();
-        if (text) errMsg = text;
-      } catch (__) {}
-    }
+    try { const data = await res.json(); errMsg = data.detail || data.message || JSON.stringify(data); } catch (_) {}
     throw new Error(errMsg);
   }
-
   return res.json();
 }
 
+// ─── Competitor Tracker API ───────────────────────────────────────────────────
+
+export async function fetchCompetitors() {
+  const res = await fetch(`${API_BASE}/competitors`);
+  if (!res.ok) throw new Error('Failed to fetch competitors');
+  return res.json();
+}
+
+export async function addCompetitor(payload) {
+  const res = await fetch(`${API_BASE}/competitors`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || data.message || 'Failed to add competitor');
+  }
+  return res.json();
+}
+
+export async function removeCompetitor(competitorId) {
+  const res = await fetch(`${API_BASE}/competitors/${competitorId}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || data.message || 'Failed to remove competitor');
+  }
+  return res.json();
+}
+
+export async function scrapeAllCompetitors() {
+  const res = await fetch(`${API_BASE}/competitors/scrape`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || data.message || 'Failed to scrape competitors');
+  }
+  return res.json();
+}
+
+export async function scrapeSingleCompetitor(competitorId) {
+  const res = await fetch(`${API_BASE}/competitors/${competitorId}/scrape`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || data.message || 'Failed to scrape competitor');
+  }
+  return res.json();
+}
+
+export async function fetchCompetitorReels({
+  timeframe = 'all',
+  minViews = 0,
+  competitor = null,
+  sortBy = 'views',
+  limit = 50,
+  offset = 0,
+} = {}) {
+  const params = new URLSearchParams({
+    timeframe,
+    min_views: minViews.toString(),
+    sort_by: sortBy,
+    limit: limit.toString(),
+    offset: offset.toString(),
+  });
+  if (competitor && competitor !== 'all') params.append('competitor', competitor);
+  const res = await fetch(`${API_BASE}/competitors/reels?${params.toString()}`);
+  if (!res.ok) throw new Error('Failed to fetch competitor reels');
+  return res.json();
+}
+
+export async function fetchSpikeAlerts(minVelocity = 20000) {
+  const res = await fetch(`${API_BASE}/competitors/alerts?min_velocity=${minVelocity}`);
+  if (!res.ok) throw new Error('Failed to fetch spike alerts');
+  return res.json();
+}
+
+export async function fetchCompetitorStats() {
+  const res = await fetch(`${API_BASE}/competitors/stats`);
+  if (!res.ok) throw new Error('Failed to fetch competitor stats');
+  return res.json();
+}
+
+export async function fetchCompetitorSuggestions() {
+  const res = await fetch(`${API_BASE}/competitors/suggestions`);
+  if (!res.ok) throw new Error('Failed to fetch suggestions');
+  return res.json();
+}

@@ -1,4 +1,7 @@
 import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from backend.app.database import engine, Base
-from backend.app.routers import categories, reels, data_sources
+from backend.app.routers import categories, reels, data_sources, competitors
 from backend.app.seed import seed_database
 
 @asynccontextmanager
@@ -37,6 +40,7 @@ app.add_middleware(
 app.include_router(categories.router)
 app.include_router(reels.router)
 app.include_router(data_sources.router)
+app.include_router(competitors.router)
 
 # Mount static frontend directory
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
